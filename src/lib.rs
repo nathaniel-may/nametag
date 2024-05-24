@@ -1,15 +1,12 @@
-use std::collections::HashSet;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct Category {
-    name: String,
-    id: String,
-    requirement: Option<usize>,
-    keywords: HashSet<Keyword>,
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Category {
+    pub name: String,
+    pub id: String,
+    pub requirement: Option<usize>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct Keyword {
-    name: String,
-    id: String,
+pub struct Keyword {
+    pub name: String,
+    pub id: String,
 }
