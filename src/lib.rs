@@ -1,3 +1,5 @@
+pub mod gui;
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Category {
     pub name: String,
