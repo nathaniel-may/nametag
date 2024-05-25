@@ -1,38 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
-use qname::schema::{Category, Keyword, Requirement};
-use qname::{gui, gui::App};
+use qname::gui;
+use qname::schema::parse::parse;
+use qname::schema::typecheck::typecheck;
+use std::error::Error as StdError;
 
-fn main() -> Result<(), eframe::Error> {
-    let media = Category {
-        name: "Media".to_string(),
-        id: "m".to_string(),
-        requirement: Requirement::Exactly(1),
-    };
-
+fn main() -> Result<(), Box<dyn StdError>> {
     let src =
         r#"schema "-" "_" [ category "Media" (exactly 1) ["art", "photo"/"ph", "video"/"v"] ]"#;
+    let app = typecheck(parse(src)?)?.into();
 
-    let app = App {
-        state: vec![(
-            media,
-            vec![
-                (
-                    Keyword {
-                        name: "Art".to_string(),
-                        id: "r".to_string(),
-                    },
-                    false,
-                ),
-                (
-                    Keyword {
-                        name: "Photo".to_string(),
-                        id: "ph".to_string(),
-                    },
-                    true,
-                ),
-            ],
-        )],
-    };
-
-    gui::run(app)
+    gui::run(app)?;
+    Ok(())
 }
