@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use crate::{Category, Keyword};
+use crate::schema::{Category, Keyword};
 use eframe::egui::{self, panel::Side};
 
 pub fn run(app: App) -> Result<(), eframe::Error> {

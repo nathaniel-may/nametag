@@ -1,11 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
-use qname::{gui, gui::App, Category, Keyword};
+use qname::schema::{Category, Keyword, Requirement};
+use qname::{gui, gui::App};
 
 fn main() -> Result<(), eframe::Error> {
     let media = Category {
         name: "Media".to_string(),
         id: "m".to_string(),
-        requirement: Some(1),
+        requirement: Requirement::Exactly(1),
     };
 
     let app = App {
