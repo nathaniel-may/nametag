@@ -3,7 +3,7 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_till},
     character::complete::{alpha1, char, newline, space0, space1, u8},
-    combinator::{all_consuming, complete, eof, recognize},
+    combinator::{complete, eof, recognize},
     error::{ErrorKind, ParseError},
     multi::{many0, many0_count, many1},
     sequence::{delimited, pair, preceded, separated_pair, terminated},
@@ -90,7 +90,7 @@ fn expr(input: &str) -> NomParseResult<ExprU> {
 
 fn func(input: &str) -> NomParseResult<ExprU> {
     let (input, name) = lexeme_vert_allowed(identifier).parse(input)?;
-    let (input, args) = all_consuming(many0(lexeme_vert_allowed(expr)))(input)?;
+    let (input, args) = many0(lexeme_vert_allowed(expr))(input)?;
     Ok((
         input,
         FnU {
@@ -101,15 +101,16 @@ fn func(input: &str) -> NomParseResult<ExprU> {
 }
 
 fn list(input: &str) -> NomParseResult<ExprU> {
-    let (rest, inside) = between(&'[', &']').parse(input)?;
-    let (_, args) = all_consuming(alt((
+    let (input, _) = char('[').parse(input)?;
+    let (input, args) = alt((
         sep_by1(
             delimited(line_space0, tag(","), line_space0),
             delimited(line_space0, expr, line_space0),
         ),
         line_space0.map(|_| vec![]),
-    )))(inside)?;
-    Ok((rest, ListU(args)))
+    ))(input)?;
+    let (input, _) = char(']').parse(input)?;
+    Ok((input, ListU(args)))
 }
 
 fn identifier(input: &str) -> NomParseResult<&str> {
@@ -218,11 +219,8 @@ fn symbol<'a, E: ParseError<&'a str>>(s: &'a str) -> impl Parser<&'a str, &'a st
 
 #[test]
 fn top_level() {
-    //   let input = r#"schema "-" "_"
-    // [ category "Media" (exactly 1) ["art", "photo"/"ph", "video"/"v"]
-    // ]"#;
     let input = r#"schema "-" "_"
-  [ category []
+  [ category "Media" (exactly 1) ["art", "photo"/"ph", "video"/"v"]
   ]"#;
 
     let expr = FnU {
@@ -254,8 +252,7 @@ fn top_level() {
         ],
     };
 
-    // assert_eq!(Ok(expr), parse(input));
-    assert!(parse(input).is_ok())
+    assert_eq!(Ok(expr), parse(input));
 }
 
 #[test]
@@ -284,6 +281,7 @@ fn parse_func() {
         func("foo 99\n  [ 0\n  , 1\n  ]"),
         Ok(("", foo99l01.clone()))
     );
+    assert_eq!(func("foo\n  [  0\n  , 1\n  ]"), Ok(("", fool01.clone())));
     assert!(func(r#"category "Media" (exactly 1) ["art", "photo"/"ph", "video"/"v"]"#).is_ok())
 }
 
@@ -312,6 +310,11 @@ fn parse_keyword() {
             }
         ))
     );
+}
+
+#[test]
+fn parse_string() {
+    assert_eq!(string(r#""abc""#), Ok(("", "abc".to_string())));
 }
 
 #[test]

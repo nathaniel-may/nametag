@@ -9,6 +9,9 @@ fn main() -> Result<(), eframe::Error> {
         requirement: Requirement::Exactly(1),
     };
 
+    let src =
+        r#"schema "-" "_" [ category "Media" (exactly 1) ["art", "photo"/"ph", "video"/"v"] ]"#;
+
     let app = App {
         state: vec![(
             media,

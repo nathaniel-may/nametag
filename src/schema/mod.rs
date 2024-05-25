@@ -1,4 +1,5 @@
 pub mod parse;
+pub mod typecheck;
 
 use std::{error::Error as StdError, fmt};
 
@@ -48,6 +49,17 @@ impl fmt::Display for SchemaParseError {
 
 impl StdError for SchemaParseError {}
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum SchemaTypeCheckError {}
+
+impl fmt::Display for SchemaTypeCheckError {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Ok(())
+    }
+}
+
+impl StdError for SchemaTypeCheckError {}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExprU {
     KeywordU { name: String, id: String },
@@ -55,11 +67,4 @@ pub enum ExprU {
     FnU { name: String, args: Vec<ExprU> },
     ListU(Vec<ExprU>),
     NatU(u8),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ExprT {
-    SchemaT(Schema),
-    CategoryT(Category),
-    KeywordT(Keyword),
 }
