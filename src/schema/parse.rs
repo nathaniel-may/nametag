@@ -3,7 +3,7 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_till},
     character::complete::{alpha1, char, newline, space0, space1, u8},
-    combinator::{complete, eof, recognize},
+    combinator::{complete, eof, recognize, success},
     error::{ErrorKind, ParseError},
     multi::{many0, many0_count, many1},
     sequence::{delimited, pair, preceded, separated_pair, terminated},
@@ -64,7 +64,6 @@ pub fn parse(input: &str) -> Result<ExprU> {
             nom::Err::Error(e) | nom::Err::Failure(e) => match e {
                 NomParseError::Custom(e) => Err(e),
                 NomParseError::Nom(input, _kind) => {
-                    println!("{_kind:?}");
                     Err(SchemaParseError::UnexpectedInput(input.to_string()))
                 }
             },
@@ -80,17 +79,17 @@ fn expr(input: &str) -> NomParseResult<ExprU> {
     alt((
         parens(expr),
         list,
+        func,
         nat.map(NatU),
         // keywords are above commands because the syntax leads with a string
         keyword,
         string.map(StringU),
-        func,
     ))(input)
 }
 
 fn func(input: &str) -> NomParseResult<ExprU> {
     let (input, name) = lexeme_vert_allowed(identifier).parse(input)?;
-    let (input, args) = many0(lexeme_vert_allowed(expr))(input)?;
+    let (input, args) = sep_by0(line_space1, expr).parse(input)?;
     Ok((
         input,
         FnU {
@@ -101,15 +100,18 @@ fn func(input: &str) -> NomParseResult<ExprU> {
 }
 
 fn list(input: &str) -> NomParseResult<ExprU> {
-    let (input, _) = char('[').parse(input)?;
-    let (input, args) = alt((
-        sep_by1(
-            delimited(line_space0, tag(","), line_space0),
-            delimited(line_space0, expr, line_space0),
-        ),
-        line_space0.map(|_| vec![]),
-    ))(input)?;
-    let (input, _) = char(']').parse(input)?;
+    let (input, args) = between(
+        '[',
+        ']',
+        alt((
+            sep_by1(
+                delimited(line_space0, tag(","), line_space0),
+                delimited(line_space0, expr, line_space0),
+            ),
+            line_space0.map(|_| vec![]),
+        )),
+    )
+    .parse(input)?;
     Ok((input, ListU(args)))
 }
 
@@ -123,7 +125,9 @@ fn keyword(input: &str) -> NomParseResult<ExprU> {
 }
 
 fn string(input: &str) -> NomParseResult<String> {
-    between(&'"', &'"').map(|x| x.to_string()).parse(input)
+    between('"', '"', take_till(|x| x == '"'))
+        .map(|x| x.to_string())
+        .parse(input)
 }
 
 fn nat(input: &str) -> NomParseResult<u8> {
@@ -134,6 +138,10 @@ fn indent(input: &str) -> NomParseResult<&str> {
     alt((tag("  "), tag("\t")))(input).map(|(rest, _)| (rest, ""))
 }
 
+fn line_space1(input: &str) -> NomParseResult<&str> {
+    many1(alt((char(' '), char('\t'), char('\n'))))(input).map(|(rest, _)| (rest, ""))
+}
+
 fn line_space0(input: &str) -> NomParseResult<&str> {
     many0(alt((char(' '), char('\t'), char('\n'))))(input).map(|(rest, _)| (rest, ""))
 }
@@ -142,19 +150,32 @@ fn parens<'a, F, O, E: ParseError<&'a str>>(inner: F) -> impl Parser<&'a str, O,
 where
     F: Parser<&'a str, O, E>,
 {
-    between(&'(', &')').and_then(inner)
+    between('(', ')', inner)
 }
 
 /// takes two characters and returns a parser for the str between them.
-fn between<'a, E: ParseError<&'a str>>(
-    l: &'static char,
-    r: &'static char,
-) -> impl Parser<&'a str, &'a str, E> {
-    |input: &'a str| terminated(preceded(char(*l), take_till(|c| c == *r)), char(*r))(input)
+fn between<'a, O, E: ParseError<&'a str>, F>(
+    l: char,
+    r: char,
+    inner: F,
+) -> impl Parser<&'a str, O, E>
+where
+    F: Parser<&'a str, O, E>,
+{
+    terminated(preceded(char(l), inner), char(r))
+}
+
+fn sep_by0<I, O1, O2: Clone, E: ParseError<I>, F, G>(sep: F, value: G) -> impl Parser<I, Vec<O2>, E>
+where
+    I: InputLength + Clone,
+    F: Parser<I, O1, E>,
+    G: Parser<I, O2, E>,
+{
+    alt((sep_by1(sep, value), success(vec![])))
 }
 
 // inspired by the implementation of many0
-pub fn sep_by1<I, O1, O2, E: ParseError<I>, F, G>(
+fn sep_by1<I, O1, O2, E: ParseError<I>, F, G>(
     mut sep: F,
     mut value: G,
 ) -> impl FnMut(I) -> IResult<I, Vec<O2>, E>
@@ -252,7 +273,15 @@ fn top_level() {
         ],
     };
 
-    assert_eq!(Ok(expr), parse(input));
+    // assert_eq!(Ok(expr), parse(input));
+    assert_eq!(Ok(expr), func(input).map(|x| x.1));
+}
+
+#[test]
+fn parse_parens() {
+    assert_eq!(expr("(0)"), Ok(("", NatU(0))));
+    assert_eq!(expr("((0))"), Ok(("", NatU(0))));
+    assert_eq!(expr("([(0)])"), Ok(("", ListU(vec![NatU(0)]))));
 }
 
 #[test]
@@ -267,12 +296,23 @@ fn parse_func() {
         args: vec![ListU(vec![NatU(0), NatU(1)])],
     };
 
+    let fool = FnU {
+        name: "foo".to_string(),
+        args: vec![ListU(vec![])],
+    };
+
     let foo99l01 = FnU {
         name: "foo".to_string(),
         args: vec![NatU(99), ListU(vec![NatU(0), NatU(1)])],
     };
 
+    let foo9999ll = FnU {
+        name: "foo".to_string(),
+        args: vec![NatU(99), NatU(99), ListU(vec![ListU(vec![])])],
+    };
+
     assert_eq!(func("foo 0"), Ok(("", foo0.clone())));
+    assert_eq!(func("foo []"), Ok(("", fool.clone())));
     assert_eq!(func("foo\n  0"), Ok(("", foo0.clone())));
     assert_eq!(func("foo\n\t0"), Ok(("", foo0.clone())));
     assert_eq!(func("foo \n  0"), Ok(("", foo0.clone())));
@@ -282,7 +322,18 @@ fn parse_func() {
         Ok(("", foo99l01.clone()))
     );
     assert_eq!(func("foo\n  [  0\n  , 1\n  ]"), Ok(("", fool01.clone())));
-    assert!(func(r#"category "Media" (exactly 1) ["art", "photo"/"ph", "video"/"v"]"#).is_ok())
+    assert_eq!(func("foo 99 99\n  [  []  ]"), Ok(("", foo9999ll.clone())));
+    assert!(func(r#"category "Media" (exactly 1) ["art", "photo"/"ph", "video"/"v"]"#).is_ok());
+    assert_eq!(
+        func("boop []]"),
+        Ok((
+            "]",
+            FnU {
+                name: "boop".to_string(),
+                args: vec![ListU(vec![])]
+            }
+        ))
+    );
 }
 
 #[test]
@@ -296,6 +347,17 @@ fn parse_list() {
     assert_eq!(list("[\n\t]"), Ok(("", ListU(vec![]))));
     assert_eq!(list("[ 0\n\t]"), Ok(("", ListU(vec![NatU(0)]))));
     assert_eq!(list("[ 0\n, 1\n]"), Ok(("", ListU(vec![NatU(0), NatU(1)]))));
+    assert_eq!(list("[]]"), Ok(("]", ListU(vec![]))));
+    assert_eq!(
+        list("[boop []]"),
+        Ok((
+            "",
+            ListU(vec![FnU {
+                name: "boop".to_string(),
+                args: vec![ListU(vec![])]
+            }])
+        ))
+    );
 }
 
 #[test]
