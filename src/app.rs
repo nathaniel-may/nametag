@@ -118,7 +118,7 @@ impl AppConfig {
     // loads bytes from file into the context
     fn load_active(&self, ctx: &egui::Context) -> egui::Image {
         let uri = self.active_uri();
-        // check if this uri is already in the egui cache
+        // check if this uri is already in the cache
         match ctx.try_load_bytes(&uri) {
             Ok(bytes) => loop {
                 match bytes {
@@ -135,8 +135,8 @@ impl AppConfig {
                     .read_to_end(&mut buffer)
                     .unwrap();
 
-                ctx.include_bytes(self.active_uri(), buffer.clone());
-                egui::Image::from_bytes(self.active_uri(), buffer)
+                ctx.include_bytes(self.active_uri(), buffer);
+                egui::Image::from_uri(self.active_uri())
             }
         }
     }

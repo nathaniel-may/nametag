@@ -9,11 +9,13 @@ path = "src/lib.rs"
 
 [dependencies]
 eframe = { version = "0.27", features = ["default"] }
-egui_extras = { version = "0.27", features = ["all_loaders"] }
+egui_extras = { version = "0.27.2", features = ["image"] }
 env_logger = { version = "0.10", default-features = false, features = [
     "auto-color",
     "humantime",
 ] }
-image = { version = "0.25", features = ["default-formats", "jpeg"] }
+# Must match the version of image that egui/eframe and egui/egui_extras is using.
+# I used their github releases to figure it out.
+image = { version = "0.24", features = ["default"] }
 nom = "7.1.3"
 rand = "0.8.5"
