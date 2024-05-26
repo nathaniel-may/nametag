@@ -8,6 +8,7 @@ use eframe::egui::{
 };
 use rand::{rngs::ThreadRng, thread_rng};
 use std::{
+    borrow::Cow,
     fs::{read_dir, File},
     io::Read,
     path::PathBuf,
@@ -44,6 +45,7 @@ impl AppConfig {
     pub fn new(schema: Schema, working_dir: PathBuf) -> Self {
         let mut files = vec![];
         for path in read_dir(working_dir.clone()).unwrap() {
+            // TODO filter out files that start with . and that are the schema file
             files.push(path.unwrap().path());
         }
 
@@ -89,15 +91,19 @@ impl AppConfig {
         let id = self.file_id.clone();
         let filename = filename::generate(&self.schema, &self.ui_state);
         let delim = self.schema.delim.clone();
+        let ext = match self.active_file().extension() {
+            Some(ext) => format!(".{}", ext.to_string_lossy()),
+            None => String::new(),
+        };
         match filename {
-            Ok(name) => format!("{id}{delim}{name}"),
+            Ok(name) => format!("{id}{delim}{name}{ext}"),
             Err(e) => e.to_string(),
         }
     }
 
     fn load_active(&self) -> Vec<u8> {
         let mut buffer = vec![];
-        File::open(self.files[self.active].clone())
+        File::open(self.active_file())
             .unwrap()
             .read_to_end(&mut buffer)
             .unwrap();
@@ -106,8 +112,24 @@ impl AppConfig {
 
     fn active_uri(&self) -> String {
         let mut uri = "bytes://".to_string();
-        uri.push_str(&self.files[self.active].to_string_lossy());
+        uri.push_str(&self.active_file().to_string_lossy());
         uri
+    }
+
+    fn active_file(&self) -> &PathBuf {
+        &self.files[self.active]
+    }
+
+    fn apply_rename(&mut self) {
+        let mut to = self.working_dir.clone();
+        to.push(self.mk_filename());
+        println!("{:?}", self.active_file());
+        println!("{:?}", to);
+        std::fs::rename(self.active_file(), to.clone()).unwrap();
+
+        // now that file has a different filename so we must update the system state of the folder
+        // so the next refresh doesn't fail
+        self.files[self.active] = to;
     }
 }
 
@@ -130,6 +152,10 @@ impl eframe::App for AppConfig {
             self.prev();
         }
 
+        if ctx.input(|i| i.key_pressed(Key::Enter)) {
+            self.apply_rename()
+        }
+
         egui::SidePanel::new(Side::Left, "keyword").show(ctx, |ui| {
             self.ui_state.iter_mut().for_each(|cat| {
                 ui.label(cat.0.name.clone());
@@ -141,7 +167,11 @@ impl eframe::App for AppConfig {
         });
 
         egui::TopBottomPanel::new(TopBottomSide::Top, "filename").show(ctx, |ui| {
-            ui.add(Label::new(self.mk_filename()));
+            ui.add(Label::new(format!(
+                "filename: {}",
+                self.active_file().file_name().unwrap().to_string_lossy()
+            )));
+            ui.add(Label::new(format!("new name: {}", self.mk_filename())));
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
