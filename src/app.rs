@@ -7,11 +7,7 @@ use eframe::egui::{
     Key, Label,
 };
 use rand::{rngs::ThreadRng, thread_rng};
-use std::{
-    fs::{read_dir, File},
-    io::Read,
-    path::PathBuf,
-};
+use std::{fs::read_dir, path::PathBuf};
 
 pub fn run(app: AppConfig) -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
@@ -103,17 +99,8 @@ impl AppConfig {
         }
     }
 
-    fn load_active(&self) -> Vec<u8> {
-        let mut buffer = vec![];
-        File::open(self.active_file())
-            .unwrap()
-            .read_to_end(&mut buffer)
-            .unwrap();
-        buffer
-    }
-
     fn active_uri(&self) -> String {
-        let mut uri = "bytes://".to_string();
+        let mut uri = "file://".to_string();
         uri.push_str(&self.active_file().to_string_lossy());
         uri
     }
@@ -176,11 +163,7 @@ impl eframe::App for AppConfig {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::both().show(ui, |ui| {
-                let uri = self.active_uri();
-                // TODO I'm loading from disk on demand every time. figure out how to load them into the context
-                // ctx.include_bytes(uri.clone(), self.load_active());
-                let image = egui::Image::from_bytes(uri, self.load_active());
-                ui.add(image.rounding(10.0));
+                ui.image(self.active_uri());
             });
         });
     }
