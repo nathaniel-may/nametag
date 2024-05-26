@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use crate::schema::{Category, Keyword, Schema};
+use crate::{schema::Schema, State};
 use eframe::egui::{self, panel::Side};
 
 pub fn run(app: App) -> Result<(), eframe::Error> {
@@ -21,7 +21,7 @@ pub fn run(app: App) -> Result<(), eframe::Error> {
 
 #[derive(Clone, Debug, Default)]
 pub struct App {
-    pub state: Vec<(Category, Vec<(Keyword, bool)>)>,
+    pub state: State,
 }
 
 impl From<Schema> for App {

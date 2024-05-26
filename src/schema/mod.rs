@@ -17,11 +17,21 @@ pub struct Category {
     pub requirement: Requirement,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Requirement {
     Exactly(u8),
     AtLeast(u8),
     AtMost(u8),
+}
+
+impl fmt::Display for Requirement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Exactly(n) => write!(f, "exactly {n}"),
+            Self::AtLeast(n) => write!(f, "at least {n}"),
+            Self::AtMost(n) => write!(f, "at most {n}"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
