@@ -14,6 +14,6 @@ env_logger = { version = "0.10", default-features = false, features = [
     "auto-color",
     "humantime",
 ] }
-image = { version = "0.25", features = ["default-formats"] }
+image = { version = "0.25", features = ["default-formats", "jpeg"] }
 nom = "7.1.3"
 rand = "0.8.5"

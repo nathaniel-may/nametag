@@ -3,6 +3,7 @@
 use crate::{filename, schema::Schema, State};
 use eframe::egui::{
     self,
+    load::BytesPoll,
     panel::{Side, TopBottomSide},
     Key, Label,
 };
@@ -11,6 +12,7 @@ use std::{
     fs::{read_dir, File},
     io::Read,
     path::PathBuf,
+    time::Duration,
 };
 
 pub fn run(app: AppConfig) -> Result<(), eframe::Error> {
@@ -114,18 +116,28 @@ impl AppConfig {
     }
 
     // loads bytes from file into the context
-    fn load_active(&self, ctx: &egui::Context) {
+    fn load_active(&self, ctx: &egui::Context) -> egui::Image {
         let uri = self.active_uri();
-        // check if this uri is already in the cache
-        // if not- put it there.
-        if ctx.try_load_bytes(&uri).is_err() {
-            let mut buffer = vec![];
-            File::open(self.active_file())
-                .unwrap()
-                .read_to_end(&mut buffer)
-                .unwrap();
+        // check if this uri is already in the egui cache
+        match ctx.try_load_bytes(&uri) {
+            Ok(bytes) => loop {
+                match bytes {
+                    BytesPoll::Pending { .. } => std::thread::sleep(Duration::from_millis(50)),
+                    BytesPoll::Ready { bytes, .. } => {
+                        return egui::Image::from_bytes(uri.clone(), bytes)
+                    }
+                }
+            },
+            Err(_) => {
+                let mut buffer = vec![];
+                File::open(self.active_file())
+                    .unwrap()
+                    .read_to_end(&mut buffer)
+                    .unwrap();
 
-            ctx.include_bytes(self.active_uri(), buffer)
+                ctx.include_bytes(self.active_uri(), buffer.clone());
+                egui::Image::from_bytes(self.active_uri(), buffer)
+            }
         }
     }
 
@@ -183,8 +195,8 @@ impl eframe::App for AppConfig {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::both().show(ui, |ui| {
-                self.load_active(ctx);
-                ui.add(egui::Image::from_uri(self.active_uri()).rounding(10.0));
+                let image = self.load_active(ctx);
+                ui.add(image.rounding(10.0));
             });
         });
     }
