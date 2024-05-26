@@ -2644,6 +2644,7 @@ dependencies = [
  "env_logger",
  "image 0.25.1",
  "nom",
+ "rand",
 ]
 
 [[package]]

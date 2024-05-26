@@ -6,6 +6,7 @@ use eframe::egui::{
     panel::{Side, TopBottomSide},
     Key, Label,
 };
+use rand::{rngs::ThreadRng, thread_rng};
 use std::{
     fs::{read_dir, File},
     io::Read,
@@ -33,8 +34,10 @@ pub struct AppConfig {
     pub working_dir: PathBuf,
     pub schema: Schema,
     pub active: usize,
+    pub file_id: String,
     pub ui_state: State,
     pub files: Vec<PathBuf>,
+    pub rng: ThreadRng,
 }
 
 impl AppConfig {
@@ -45,14 +48,19 @@ impl AppConfig {
         }
 
         let ui_state = to_empty_state(&schema);
+        let rng = thread_rng();
 
-        AppConfig {
+        let mut config = AppConfig {
             schema,
             ui_state,
             working_dir,
             active: 0,
+            file_id: "".to_string(),
             files,
-        }
+            rng,
+        };
+        config.gen_id();
+        config
     }
 
     fn next(&mut self) {
@@ -61,6 +69,7 @@ impl AppConfig {
         } else {
             self.active += 1;
         }
+        self.gen_id()
     }
 
     fn prev(&mut self) {
@@ -68,6 +77,21 @@ impl AppConfig {
             self.active = self.files.len() - 1;
         } else {
             self.active -= 1;
+        }
+        self.gen_id()
+    }
+
+    fn gen_id(&mut self) {
+        self.file_id = filename::gen_rand_id(&mut self.rng);
+    }
+
+    fn mk_filename(&self) -> String {
+        let id = self.file_id.clone();
+        let filename = filename::generate(&self.schema, &self.ui_state);
+        let delim = self.schema.delim.clone();
+        match filename {
+            Ok(name) => format!("{id}{delim}{name}"),
+            Err(e) => e.to_string(),
         }
     }
 
@@ -117,12 +141,7 @@ impl eframe::App for AppConfig {
         });
 
         egui::TopBottomPanel::new(TopBottomSide::Top, "filename").show(ctx, |ui| {
-            let filename = filename::generate(&self.schema, &self.ui_state);
-            let msg = match filename {
-                Ok(name) => name,
-                Err(e) => e.to_string(),
-            };
-            ui.add(Label::new(msg));
+            ui.add(Label::new(self.mk_filename()));
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {

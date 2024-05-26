@@ -1,13 +1,17 @@
 pub mod parse;
 
-use core::fmt;
-
 use crate::schema::{
     Category,
     Requirement::{self, *},
     Schema,
 };
 use crate::State;
+use core::fmt;
+use rand::Rng;
+use rand::{
+    distributions::{Distribution, Uniform},
+    rngs::ThreadRng,
+};
 use std::error::Error as StdError;
 use GenerateFilenameError::*;
 
@@ -70,4 +74,21 @@ pub fn generate(schema: &Schema, state: &State) -> Result<String, GenerateFilena
     // remove the last delimeter added
     name.pop();
     Ok(name)
+}
+
+pub fn gen_rand_id(rng: &mut ThreadRng) -> String {
+    (0..6)
+        .map(|_| rng.sample(IDChars) as char)
+        .collect::<String>()
+}
+
+struct IDChars;
+
+impl Distribution<u8> for IDChars {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> u8 {
+        const RANGE: usize = 25 + 9;
+        const CHARSET: &[u8] = b"ABCDEFGHIJKLMNPQRSTUVWXYZ123456789";
+        let range = Uniform::new(0, RANGE);
+        CHARSET[range.sample(rng)]
+    }
 }
