@@ -1,4 +1,5 @@
 pub mod filename;
+pub mod fs;
 pub mod gui;
 pub mod schema;
 

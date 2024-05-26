@@ -93,6 +93,8 @@ fn expr(input: &str) -> NomParseResult<ExprU> {
 fn func(input: &str) -> NomParseResult<ExprU> {
     let (input, name) = lexeme_vert_allowed(identifier).parse(input)?;
     let (input, args) = sep_by0(line_space1, expr).parse(input)?;
+    // eat any trailing whitespace
+    let (input, _) = line_space0.parse(input)?;
     Ok((
         input,
         FnU {
