@@ -7,7 +7,11 @@ use eframe::egui::{
     Key, Label,
 };
 use rand::{rngs::ThreadRng, thread_rng};
-use std::{fs::read_dir, path::PathBuf};
+use std::{
+    fs::{read_dir, File},
+    io::Read,
+    path::PathBuf,
+};
 
 pub fn run(app: AppConfig) -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
@@ -100,13 +104,29 @@ impl AppConfig {
     }
 
     fn active_uri(&self) -> String {
-        let mut uri = "file://".to_string();
+        let mut uri = "bytes://".to_string();
         uri.push_str(&self.active_file().to_string_lossy());
         uri
     }
 
     fn active_file(&self) -> &PathBuf {
         &self.files[self.active]
+    }
+
+    // loads bytes from file into the context
+    fn load_active(&self, ctx: &egui::Context) {
+        let uri = self.active_uri();
+        // check if this uri is already in the cache
+        // if not- put it there.
+        if ctx.try_load_bytes(&uri).is_err() {
+            let mut buffer = vec![];
+            File::open(self.active_file())
+                .unwrap()
+                .read_to_end(&mut buffer)
+                .unwrap();
+
+            ctx.include_bytes(self.active_uri(), buffer)
+        }
     }
 
     fn apply_rename(&mut self) {
@@ -163,7 +183,8 @@ impl eframe::App for AppConfig {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::both().show(ui, |ui| {
-                ui.image(self.active_uri());
+                self.load_active(ctx);
+                ui.add(egui::Image::from_uri(self.active_uri()).rounding(10.0));
             });
         });
     }
