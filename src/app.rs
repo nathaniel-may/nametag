@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 use crate::{schema::Schema, State};
-use eframe::egui::{self, panel::Side};
+use eframe::egui::{self, panel::Side, Key};
 use std::{
     fs::{read_dir, File},
     io::Read,
@@ -14,7 +14,7 @@ pub fn run(app: AppConfig) -> Result<(), eframe::Error> {
         ..Default::default()
     };
     eframe::run_native(
-        "Image Viewer",
+        "QName",
         options,
         Box::new(|cc| {
             // This gives us image support:
@@ -44,6 +44,22 @@ impl AppConfig {
             working_dir,
             active: 0,
             files,
+        }
+    }
+
+    fn next(&mut self) {
+        if self.active >= self.files.len() - 1 {
+            self.active = 0;
+        } else {
+            self.active += 1;
+        }
+    }
+
+    fn prev(&mut self) {
+        if self.active == 0 {
+            self.active = self.files.len() - 1;
+        } else {
+            self.active -= 1;
         }
     }
 
@@ -84,6 +100,14 @@ impl eframe::App for AppConfig {
         });
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::both().show(ui, |ui| {
+                if ctx.input(|i| i.key_pressed(Key::ArrowLeft)) {
+                    self.next();
+                }
+
+                if ctx.input(|i| i.key_pressed(Key::ArrowRight)) {
+                    self.prev();
+                }
+
                 let uri = self.active_uri();
                 // TODO I'm loading from disk on demand every time. figure out how to load them into the context
                 // ctx.include_bytes(uri.clone(), self.load_active());
