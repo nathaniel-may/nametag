@@ -1,7 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use crate::{schema::Schema, State};
-use eframe::egui::{self, panel::Side, Key};
+use crate::{filename, schema::Schema, State};
+use eframe::egui::{
+    self,
+    panel::{Side, TopBottomSide},
+    Key, Label,
+};
 use std::{
     fs::{read_dir, File},
     io::Read,
@@ -24,9 +28,10 @@ pub fn run(app: AppConfig) -> Result<(), eframe::Error> {
     )
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct AppConfig {
     pub working_dir: PathBuf,
+    pub schema: Schema,
     pub active: usize,
     pub ui_state: State,
     pub files: Vec<PathBuf>,
@@ -39,8 +44,11 @@ impl AppConfig {
             files.push(path.unwrap().path());
         }
 
+        let ui_state = to_empty_state(&schema);
+
         AppConfig {
-            ui_state: to_empty_state(schema),
+            schema,
+            ui_state,
             working_dir,
             active: 0,
             files,
@@ -79,9 +87,10 @@ impl AppConfig {
     }
 }
 
-pub fn to_empty_state(schema: Schema) -> State {
+pub fn to_empty_state(schema: &Schema) -> State {
     schema
         .categories
+        .clone()
         .into_iter()
         .map(|(cat, kws)| (cat, kws.into_iter().map(|k| (k, false)).collect()))
         .collect()
@@ -89,6 +98,14 @@ pub fn to_empty_state(schema: Schema) -> State {
 
 impl eframe::App for AppConfig {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if ctx.input(|i| i.key_pressed(Key::ArrowLeft)) {
+            self.next();
+        }
+
+        if ctx.input(|i| i.key_pressed(Key::ArrowRight)) {
+            self.prev();
+        }
+
         egui::SidePanel::new(Side::Left, "keyword").show(ctx, |ui| {
             self.ui_state.iter_mut().for_each(|cat| {
                 ui.label(cat.0.name.clone());
@@ -98,16 +115,18 @@ impl eframe::App for AppConfig {
                 })
             })
         });
+
+        egui::TopBottomPanel::new(TopBottomSide::Top, "filename").show(ctx, |ui| {
+            let filename = filename::generate(&self.schema, &self.ui_state);
+            let msg = match filename {
+                Ok(name) => name,
+                Err(e) => e.to_string(),
+            };
+            ui.add(Label::new(msg));
+        });
+
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::both().show(ui, |ui| {
-                if ctx.input(|i| i.key_pressed(Key::ArrowLeft)) {
-                    self.next();
-                }
-
-                if ctx.input(|i| i.key_pressed(Key::ArrowRight)) {
-                    self.prev();
-                }
-
                 let uri = self.active_uri();
                 // TODO I'm loading from disk on demand every time. figure out how to load them into the context
                 // ctx.include_bytes(uri.clone(), self.load_active());

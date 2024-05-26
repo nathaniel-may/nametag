@@ -30,7 +30,7 @@ impl fmt::Display for GenerateFilenameError {
 
 impl StdError for GenerateFilenameError {}
 
-fn generate(schema: &Schema, state: &State) -> Result<String, GenerateFilenameError> {
+pub fn generate(schema: &Schema, state: &State) -> Result<String, GenerateFilenameError> {
     let mut name = String::new();
     for (cat, kws) in state {
         let ids: Vec<String> = kws
