@@ -8,7 +8,6 @@ use eframe::egui::{
 };
 use rand::{rngs::ThreadRng, thread_rng};
 use std::{
-    borrow::Cow,
     fs::{read_dir, File},
     io::Read,
     path::PathBuf,
@@ -45,8 +44,11 @@ impl AppConfig {
     pub fn new(schema: Schema, working_dir: PathBuf) -> Self {
         let mut files = vec![];
         for path in read_dir(working_dir.clone()).unwrap() {
-            // TODO filter out files that start with . and that are the schema file
-            files.push(path.unwrap().path());
+            let p = path.unwrap();
+            let filename = p.file_name().to_string_lossy().to_string();
+            if !filename.starts_with('.') && filename != "schema.q" {
+                files.push(p.path());
+            }
         }
 
         let ui_state = to_empty_state(&schema);
@@ -123,8 +125,6 @@ impl AppConfig {
     fn apply_rename(&mut self) {
         let mut to = self.working_dir.clone();
         to.push(self.mk_filename());
-        println!("{:?}", self.active_file());
-        println!("{:?}", to);
         std::fs::rename(self.active_file(), to.clone()).unwrap();
 
         // now that file has a different filename so we must update the system state of the folder
