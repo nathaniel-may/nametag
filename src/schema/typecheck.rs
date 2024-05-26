@@ -77,22 +77,8 @@ fn typecheck_(expr: ExprU) -> Result<ExprT> {
                 [] => Ok(ListT(xs)),
                 // homogeneous
                 [_] => Ok(ListT(xs)),
-                // heterogeneous, but coercable. TODO make this more graceful
-                [Type::String, Type::Keyword] | [Type::Keyword, Type::String] => {
-                    let xs = xs
-                        .iter()
-                        .map(|x| match x {
-                            StringT(s) => KeywordT(Keyword {
-                                name: s.to_string(),
-                                id: s.to_string(),
-                            }),
-                            x => x.clone(),
-                        })
-                        .collect::<Vec<ExprT>>();
-                    Ok(ListT(xs))
-                }
                 // heterogenous
-                _ => Err(HeterogeneousListIsNotCoercable(types.clone())),
+                _ => Err(HeterogeneousList(types.clone())),
             }
         }
         FnU { name, args } => match (name.as_str(), &args[..]) {
@@ -195,23 +181,15 @@ fn type_of(expr: &ExprT) -> Type {
 
 #[test]
 fn test_typecheck() {
-    assert_eq!(
-        typecheck_(ListU(vec![
-            StringU("a".to_string()),
-            KeywordU {
-                name: "boo".to_string(),
-                id: "b".to_string()
-            }
-        ])),
-        Ok(ListT(vec![
-            KeywordT(Keyword {
-                name: "a".to_string(),
-                id: "a".to_string()
-            }),
-            KeywordT(Keyword {
-                name: "boo".to_string(),
-                id: "b".to_string()
-            })
-        ]))
-    );
+    let hetero_list = typecheck_(ListU(vec![
+        StringU("a".to_string()),
+        KeywordU {
+            name: "boo".to_string(),
+            id: "b".to_string(),
+        },
+    ]));
+    match hetero_list {
+        Err(HeterogeneousList(t)) if t.len() == 2 => (),
+        _ => panic!("heterogeneous lists are not allowed."),
+    }
 }

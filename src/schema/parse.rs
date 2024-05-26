@@ -122,9 +122,23 @@ fn identifier(input: &str) -> NomParseResult<&str> {
     recognize(pair(alpha1, many0_count(alt((alpha1, tag("_"))))))(input)
 }
 
+fn keyword_half(input: &str) -> NomParseResult<String> {
+    between('\'', '\'', take_till(|x| x == '\''))
+        .map(|x| x.to_string())
+        .parse(input)
+}
+
 fn keyword(input: &str) -> NomParseResult<ExprU> {
-    let (rest, (name, id)) = separated_pair(string, tag("/"), string)(input)?;
-    Ok((rest, KeywordU { name, id }))
+    alt((
+        separated_pair(keyword_half, tag("/"), keyword_half).map(|(name, id)| KeywordU {
+            name: name.clone(),
+            id: id.clone(),
+        }),
+        keyword_half.map(|name| KeywordU {
+            name: name.clone(),
+            id: name.clone(),
+        }),
+    ))(input)
 }
 
 fn string(input: &str) -> NomParseResult<String> {
@@ -234,7 +248,7 @@ fn top_level() {
     // [ category "Media" (exactly 1) ["art", "photo"/"ph", "video"/"v"]
     // , category "People" (at_least 0) ["nate"]
     // ]"#;
-    let input = r#"schema "-" "_" [ category "Media" (exactly 1) ["art", "photo"/"ph", "video"/"v"], category "People" (at_least 0) ["nate"]]"#;
+    let input = r#"schema "-" "_" [ category "Media" (exactly 1) ['art', 'photo'/'ph', 'video'/'v'], category "People" (at_least 0) ['nate']]"#;
 
     let expr = FnU {
         name: "schema".to_string(),
@@ -251,7 +265,10 @@ fn top_level() {
                             args: vec![NatU(1)],
                         },
                         ListU(vec![
-                            StringU("art".to_string()),
+                            KeywordU {
+                                name: "art".to_string(),
+                                id: "art".to_string(),
+                            },
                             KeywordU {
                                 name: "photo".to_string(),
                                 id: "ph".to_string(),
@@ -271,7 +288,10 @@ fn top_level() {
                             name: "at_least".to_string(),
                             args: vec![NatU(0)],
                         },
-                        ListU(vec![StringU("nate".to_string())]),
+                        ListU(vec![KeywordU {
+                            name: "nate".to_string(),
+                            id: "nate".to_string(),
+                        }]),
                     ],
                 },
             ]),
@@ -367,12 +387,22 @@ fn parse_list() {
 #[test]
 fn parse_keyword() {
     assert_eq!(
-        keyword(r#""abc"/"a""#),
+        keyword(r#"'abc'/'a'"#),
         Ok((
             "",
             KeywordU {
                 name: "abc".to_string(),
                 id: "a".to_string()
+            }
+        ))
+    );
+    assert_eq!(
+        keyword(r#"'abc'"#),
+        Ok((
+            "",
+            KeywordU {
+                name: "abc".to_string(),
+                id: "abc".to_string()
             }
         ))
     );

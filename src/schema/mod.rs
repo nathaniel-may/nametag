@@ -51,7 +51,7 @@ impl StdError for SchemaParseError {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SchemaTypeCheckError {
-    HeterogeneousListIsNotCoercable(Vec<Type>),
+    HeterogeneousList(Vec<Type>),
     TypeMismatch { expected: Type, got: Type },
     UnknownFunction { name: String, arg_types: Vec<Type> },
     ExpectedTopLevelSchema,
@@ -60,10 +60,10 @@ pub enum SchemaTypeCheckError {
 impl fmt::Display for SchemaTypeCheckError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::HeterogeneousListIsNotCoercable(types) => {
+            Self::HeterogeneousList(types) => {
                 write!(
                     f,
-                    "Heterogenous list is not coercable. Found elements of types {}",
+                    "Heterogenous lists are not supported. Found elements of types {}",
                     display_types(types)
                 )
             }
