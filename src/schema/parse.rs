@@ -58,6 +58,9 @@ impl<I> From<nom::Err<(I, ErrorKind)>> for NomParseError<I> {
 
 pub fn parse(input: &str) -> Result<ExprU> {
     match complete(expr).parse(input) {
+        Ok((leftover, _)) if !leftover.is_empty() => {
+            Err(SchemaParseError::UnexpectedInput(leftover.to_string()))
+        }
         Ok((_, schema @ FnU { .. })) => Ok(schema),
         Ok((_, _)) => Err(SchemaParseError::MustStartWithSchemaConstructor),
         Err(e) => match e {
@@ -116,7 +119,7 @@ fn list(input: &str) -> NomParseResult<ExprU> {
 }
 
 fn identifier(input: &str) -> NomParseResult<&str> {
-    recognize(pair(alpha1, many0_count(alt((alpha1, tag("-"))))))(input)
+    recognize(pair(alpha1, many0_count(alt((alpha1, tag("_"))))))(input)
 }
 
 fn keyword(input: &str) -> NomParseResult<ExprU> {
@@ -211,14 +214,6 @@ where
     }
 }
 
-/// requries trailing whitespace or end of input
-fn lexeme<'a, F, O, E: ParseError<&'a str>>(inner: F) -> impl Parser<&'a str, O, E>
-where
-    F: Parser<&'a str, O, E>,
-{
-    terminated(inner, alt((space1, eof)))
-}
-
 /// requries trailing whitespace, newline, or end of input
 fn lexeme_vert_allowed<'a, F, O>(inner: F) -> impl Parser<&'a str, O, NomParseError<&'a str>>
 where
@@ -233,48 +228,57 @@ where
     )
 }
 
-/// requries trailing whitespace or end of input
-fn symbol<'a, E: ParseError<&'a str>>(s: &'a str) -> impl Parser<&'a str, &'a str, E> {
-    terminated(tag(s), alt((space1, eof)))
-}
-
 #[test]
 fn top_level() {
-    let input = r#"schema "-" "_"
-  [ category "Media" (exactly 1) ["art", "photo"/"ph", "video"/"v"]
-  ]"#;
+    //   let input = r#"schema "-" "_"
+    // [ category "Media" (exactly 1) ["art", "photo"/"ph", "video"/"v"]
+    // , category "People" (at_least 0) ["nate"]
+    // ]"#;
+    let input = r#"schema "-" "_" [ category "Media" (exactly 1) ["art", "photo"/"ph", "video"/"v"], category "People" (at_least 0) ["nate"]]"#;
 
     let expr = FnU {
         name: "schema".to_string(),
         args: vec![
             StringU("-".to_string()),
             StringU("_".to_string()),
-            ListU(vec![FnU {
-                name: "category".to_string(),
-                args: vec![
-                    StringU("Media".to_string()),
-                    FnU {
-                        name: "exactly".to_string(),
-                        args: vec![NatU(1)],
-                    },
-                    ListU(vec![
-                        StringU("art".to_string()),
-                        KeywordU {
-                            name: "photo".to_string(),
-                            id: "ph".to_string(),
+            ListU(vec![
+                FnU {
+                    name: "category".to_string(),
+                    args: vec![
+                        StringU("Media".to_string()),
+                        FnU {
+                            name: "exactly".to_string(),
+                            args: vec![NatU(1)],
                         },
-                        KeywordU {
-                            name: "video".to_string(),
-                            id: "v".to_string(),
+                        ListU(vec![
+                            StringU("art".to_string()),
+                            KeywordU {
+                                name: "photo".to_string(),
+                                id: "ph".to_string(),
+                            },
+                            KeywordU {
+                                name: "video".to_string(),
+                                id: "v".to_string(),
+                            },
+                        ]),
+                    ],
+                },
+                FnU {
+                    name: "category".to_string(),
+                    args: vec![
+                        StringU("People".to_string()),
+                        FnU {
+                            name: "at_least".to_string(),
+                            args: vec![NatU(0)],
                         },
-                    ]),
-                ],
-            }]),
+                        ListU(vec![StringU("nate".to_string())]),
+                    ],
+                },
+            ]),
         ],
     };
 
-    // assert_eq!(Ok(expr), parse(input));
-    assert_eq!(Ok(expr), func(input).map(|x| x.1));
+    assert_eq!(Ok(expr), parse(input));
 }
 
 #[test]

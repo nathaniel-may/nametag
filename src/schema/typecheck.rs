@@ -164,7 +164,16 @@ fn typecheck_(expr: ExprU) -> Result<ExprT> {
                     }),
                 }
             }
-            (name, _) => Err(UnknownFunction(name.to_string())),
+            (name, args) => {
+                let arg_types = args
+                    .iter()
+                    .map(|x| typecheck_(x.clone()).map(|x| type_of(&x)))
+                    .collect::<Result<Vec<Type>>>()?;
+                Err(UnknownFunction {
+                    name: name.to_string(),
+                    arg_types,
+                })
+            }
         },
     }
 }

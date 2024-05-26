@@ -53,7 +53,7 @@ impl StdError for SchemaParseError {}
 pub enum SchemaTypeCheckError {
     HeterogeneousListIsNotCoercable(Vec<Type>),
     TypeMismatch { expected: Type, got: Type },
-    UnknownFunction(String),
+    UnknownFunction { name: String, arg_types: Vec<Type> },
     ExpectedTopLevelSchema,
 }
 
@@ -61,21 +61,20 @@ impl fmt::Display for SchemaTypeCheckError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::HeterogeneousListIsNotCoercable(types) => {
-                let mut x = String::new();
-                for t in types {
-                    x.push_str(&format!("{t}, "))
-                }
-                x.pop();
-                x.pop();
                 write!(
                     f,
-                    "Heterogenous list is not coercable. Found elements of types {x}"
+                    "Heterogenous list is not coercable. Found elements of types {}",
+                    display_types(types)
                 )
             }
             Self::TypeMismatch { expected, got } => {
                 write!(f, "Type mismatch. Expected {expected}. Got {got}.")
             }
-            Self::UnknownFunction(name) => write!(f, "Unknown function \"{name}\"."),
+            Self::UnknownFunction { name, arg_types } => write!(
+                f,
+                "Unknown function \"{name}\" with arguments {}.",
+                display_types(arg_types)
+            ),
             Self::ExpectedTopLevelSchema => write!(f, "The top level value must be a schema."),
         }
     }
@@ -90,4 +89,14 @@ pub enum ExprU {
     FnU { name: String, args: Vec<ExprU> },
     ListU(Vec<ExprU>),
     NatU(u8),
+}
+
+fn display_types(types: &[Type]) -> String {
+    let mut x = String::new();
+    for t in types {
+        x.push_str(&format!("{t}, "))
+    }
+    x.pop();
+    x.pop();
+    x
 }
