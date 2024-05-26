@@ -1,6 +1,6 @@
+pub mod app;
 pub mod filename;
 pub mod fs;
-pub mod gui;
 pub mod schema;
 
 use schema::{Category, Keyword};
