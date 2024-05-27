@@ -30,6 +30,7 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn run_with(schema: Schema, working_dir: PathBuf) -> Result<(), Box<dyn StdError>> {
+        println!("Run With");
         // collect all the names of the files in the working dir so they can be loaded in the background
         let mut files = vec![];
         for path in read_dir(working_dir.clone()).unwrap() {
@@ -100,19 +101,9 @@ impl AppConfig {
         }
         self.gen_id();
 
-        // make sure the next few images are preloaded on separate threads
-        let ahead = 3;
-        let files = if self.active + ahead >= self.files.len() {
-            [
-                &self.files[self.active..],
-                &self.files[..self.files.len() - self.active],
-            ]
-            .concat()
-        } else {
-            self.files[self.active..self.active + ahead].to_vec()
-        };
-
-        self.load_ahead(&files);
+        // we're preloading the next one every time we progress.
+        let i = (self.active + 1) % self.files.len();
+        self.load_ahead(&[self.files[i].clone()]);
     }
 
     fn prev(&mut self) {
@@ -123,20 +114,9 @@ impl AppConfig {
         }
         self.gen_id();
 
-        // make sure the previous few images are preloaded on separate threads
-        let ahead = 3;
-        let i = self.active as isize - ahead;
-        let files = if i < 0 {
-            [
-                &self.files[..self.active],
-                &self.files[self.files.len() - (-i as usize)..],
-            ]
-            .concat()
-        } else {
-            self.files[(i as usize)..self.active].to_vec()
-        };
-
-        self.load_ahead(&files);
+        // we're preloading the previous one every time we progress.
+        let i = (self.active as isize - 1).rem_euclid(self.files.len() as isize) as usize;
+        self.load_ahead(&[self.files[i].clone()]);
     }
 
     // same as load, but spawns a new thread for each
@@ -219,11 +199,11 @@ pub fn to_empty_state(schema: &Schema) -> State {
 impl eframe::App for AppConfig {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if ctx.input(|i| i.key_pressed(Key::ArrowLeft)) {
-            self.next();
+            self.prev();
         }
 
         if ctx.input(|i| i.key_pressed(Key::ArrowRight)) {
-            self.prev();
+            self.next();
         }
 
         if ctx.input(|i| i.key_pressed(Key::Enter)) {
