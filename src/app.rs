@@ -94,28 +94,28 @@ impl AppConfig {
     }
 
     fn next(&mut self) {
-        if self.active >= self.files.len() - 1 {
-            self.active = 0;
-        } else {
-            self.active += 1;
+        fn next_index(current: usize, max: usize) -> usize {
+            (current + 1) % max
         }
+
+        self.active = next_index(self.active, self.files.len());
         self.gen_id();
 
         // we're preloading the next one every time we progress.
-        let i = (self.active + 1) % self.files.len();
+        let i = next_index(self.active, self.files.len());
         self.load_ahead(&[self.files[i].clone()]);
     }
 
     fn prev(&mut self) {
-        if self.active == 0 {
-            self.active = self.files.len() - 1;
-        } else {
-            self.active -= 1;
+        fn prev_index(current: usize, max: usize) -> usize {
+            (current as isize - 1).rem_euclid(max as isize) as usize
         }
+
+        self.active = prev_index(self.active, self.files.len());
         self.gen_id();
 
         // we're preloading the previous one every time we progress.
-        let i = (self.active as isize - 1).rem_euclid(self.files.len() as isize) as usize;
+        let i = prev_index(self.active, self.files.len());
         self.load_ahead(&[self.files[i].clone()]);
     }
 
