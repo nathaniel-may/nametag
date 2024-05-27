@@ -11,3 +11,8 @@ Have a directory with the media files you'd like to organize and include a file 
 ```
 cargo run <path>
 ```
+
+Features
+- actually handle errors
+- clear all selected tags
+- Problem: you stop half way through and want to move out the named ones. Solution:??? (ideas: put renamed ones in another folder? or skip ones that match the schema? but what about going backwards to fix one)

@@ -3,7 +3,6 @@
 use crate::{filename, schema::Schema, State};
 use eframe::egui::{
     self,
-    load::BytesPoll,
     panel::{Side, TopBottomSide},
     Key, Label,
 };
@@ -11,8 +10,8 @@ use rand::{rngs::ThreadRng, thread_rng};
 use std::{
     fs::{read_dir, File},
     io::Read,
-    path::PathBuf,
-    time::Duration,
+    path::{Path, PathBuf},
+    sync::Arc,
 };
 
 pub fn run(app: AppConfig) -> Result<(), eframe::Error> {
@@ -40,6 +39,7 @@ pub struct AppConfig {
     pub ui_state: State,
     pub files: Vec<PathBuf>,
     pub rng: ThreadRng,
+    pub runtime: Arc<tokio::runtime::Runtime>,
 }
 
 impl AppConfig {
@@ -56,6 +56,9 @@ impl AppConfig {
         let ui_state = to_empty_state(&schema);
         let rng = thread_rng();
 
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let runtime = Arc::new(runtime);
+
         let mut config = AppConfig {
             schema,
             ui_state,
@@ -64,27 +67,68 @@ impl AppConfig {
             file_id: "".to_string(),
             files,
             rng,
+            runtime,
         };
         config.gen_id();
         config
     }
 
-    fn next(&mut self) {
+    fn next(&mut self, ctx: &egui::Context) {
         if self.active >= self.files.len() - 1 {
             self.active = 0;
         } else {
             self.active += 1;
         }
-        self.gen_id()
+        self.gen_id();
+
+        // make sure the next few images are preloaded on separate threads
+        let ahead = 3;
+        let files = if self.active + ahead >= self.files.len() {
+            [
+                &self.files[self.active..],
+                &self.files[..self.files.len() - self.active],
+            ]
+            .concat()
+        } else {
+            self.files[self.active..self.active + ahead].to_vec()
+        };
+
+        self.load_ahead(&files, ctx);
     }
 
-    fn prev(&mut self) {
+    fn prev(&mut self, ctx: &egui::Context) {
         if self.active == 0 {
             self.active = self.files.len() - 1;
         } else {
             self.active -= 1;
         }
-        self.gen_id()
+        self.gen_id();
+
+        // make sure the previous few images are preloaded on separate threads
+        let ahead = 3;
+        let i = self.active as isize - ahead;
+        let files = if i < 0 {
+            [
+                &self.files[..self.active],
+                &self.files[self.files.len() - (-i as usize)..],
+            ]
+            .concat()
+        } else {
+            self.files[(i as usize)..self.active].to_vec()
+        };
+
+        self.load_ahead(&files, ctx);
+    }
+
+    // same as load, but spawns a new thread for each
+    fn load_ahead(&self, paths: &[PathBuf], ctx: &egui::Context) {
+        for path in paths {
+            let ctx = ctx.clone();
+            let path = path.clone();
+            self.runtime.spawn(async move {
+                Self::load(&path, &ctx);
+            });
+        }
     }
 
     fn gen_id(&mut self) {
@@ -105,9 +149,9 @@ impl AppConfig {
         }
     }
 
-    fn active_uri(&self) -> String {
+    fn to_uri(path: &Path) -> String {
         let mut uri = "bytes://".to_string();
-        uri.push_str(&self.active_file().to_string_lossy());
+        uri.push_str(&path.to_string_lossy());
         uri
     }
 
@@ -115,39 +159,31 @@ impl AppConfig {
         &self.files[self.active]
     }
 
-    // loads bytes from file into the context
     fn load_active(&self, ctx: &egui::Context) -> egui::Image {
-        let uri = self.active_uri();
-        // check if this uri is already in the cache
-        match ctx.try_load_bytes(&uri) {
-            Ok(bytes) => loop {
-                match bytes {
-                    BytesPoll::Pending { .. } => std::thread::sleep(Duration::from_millis(50)),
-                    BytesPoll::Ready { bytes, .. } => {
-                        return egui::Image::from_bytes(uri.clone(), bytes)
-                    }
-                }
-            },
-            Err(_) => {
-                let mut buffer = vec![];
-                File::open(self.active_file())
-                    .unwrap()
-                    .read_to_end(&mut buffer)
-                    .unwrap();
+        Self::load(self.active_file(), ctx);
+        egui::Image::from_uri(Self::to_uri(self.active_file()))
+    }
 
-                ctx.include_bytes(self.active_uri(), buffer);
-                egui::Image::from_uri(self.active_uri())
-            }
+    // loads bytes from file into the context
+    fn load(path: &Path, ctx: &egui::Context) {
+        let uri = Self::to_uri(path);
+        // skip if this uri is already in the cache
+        if ctx.try_load_bytes(&uri).is_err() {
+            let mut buffer = vec![];
+            File::open(path).unwrap().read_to_end(&mut buffer).unwrap();
+            ctx.include_bytes(uri.clone(), buffer);
         }
     }
 
-    fn apply_rename(&mut self) {
+    fn apply_rename(&mut self, ctx: &egui::Context) {
         let mut to = self.working_dir.clone();
         to.push(self.mk_filename());
         std::fs::rename(self.active_file(), to.clone()).unwrap();
 
-        // now that file has a different filename so we must update the system state of the folder
-        // so the next refresh doesn't fail
+        // the image will never be refrenced by its old name again so evict it from the cache
+        ctx.forget_image(&Self::to_uri(self.active_file()));
+
+        // update the list of filenames so the next refresh doesn't fail
         self.files[self.active] = to;
     }
 }
@@ -164,15 +200,15 @@ pub fn to_empty_state(schema: &Schema) -> State {
 impl eframe::App for AppConfig {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if ctx.input(|i| i.key_pressed(Key::ArrowLeft)) {
-            self.next();
+            self.next(ctx);
         }
 
         if ctx.input(|i| i.key_pressed(Key::ArrowRight)) {
-            self.prev();
+            self.prev(ctx);
         }
 
         if ctx.input(|i| i.key_pressed(Key::Enter)) {
-            self.apply_rename()
+            self.apply_rename(ctx)
         }
 
         egui::SidePanel::new(Side::Left, "keyword").show(ctx, |ui| {
