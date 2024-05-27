@@ -10,7 +10,5 @@ fn main() -> Result<(), Box<dyn StdError>> {
     let mut schema_path = working_dir.clone();
     schema_path.push("schema.q");
     let schema = qname::fs::read_schema_file(&schema_path)?;
-    let config = AppConfig::new(schema, working_dir);
-    app::run(config)?;
-    Ok(())
+    AppConfig::run_with(schema, working_dir)
 }

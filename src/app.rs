@@ -8,30 +8,16 @@ use eframe::egui::{
 };
 use rand::{rngs::ThreadRng, thread_rng};
 use std::{
+    error::Error as StdError,
     fs::{read_dir, File},
     io::Read,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-pub fn run(app: AppConfig) -> Result<(), eframe::Error> {
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([600.0, 800.0]),
-        ..Default::default()
-    };
-    eframe::run_native(
-        "QName",
-        options,
-        Box::new(|cc| {
-            // This gives us image support:
-            egui_extras::install_image_loaders(&cc.egui_ctx);
-            Box::new(app)
-        }),
-    )
-}
-
 #[derive(Clone, Debug)]
 pub struct AppConfig {
+    pub ctx: Arc<egui::Context>,
     pub working_dir: PathBuf,
     pub schema: Schema,
     pub active: usize,
@@ -43,11 +29,14 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn new(schema: Schema, working_dir: PathBuf) -> Self {
+    pub fn run_with(schema: Schema, working_dir: PathBuf) -> Result<(), Box<dyn StdError>> {
+        // collect all the names of the files in the working dir so they can be loaded in the background
         let mut files = vec![];
         for path in read_dir(working_dir.clone()).unwrap() {
+            // TODO skip directories
             let p = path.unwrap();
             let filename = p.file_name().to_string_lossy().to_string();
+            // skip dotfiles and our schema file
             if !filename.starts_with('.') && filename != "schema.q" {
                 files.push(p.path());
             }
@@ -55,11 +44,12 @@ impl AppConfig {
 
         let ui_state = to_empty_state(&schema);
         let rng = thread_rng();
-
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let runtime = Arc::new(runtime);
 
-        let mut config = AppConfig {
+        let mut app = AppConfig {
+            // dummy ctx that gets immediately overwritten.
+            ctx: Arc::new(egui::Context::default()),
             schema,
             ui_state,
             working_dir,
@@ -69,8 +59,30 @@ impl AppConfig {
             rng,
             runtime,
         };
-        config.gen_id();
-        config
+        app.gen_id();
+
+        // create the ui
+
+        let options = eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default().with_inner_size([600.0, 800.0]),
+            ..Default::default()
+        };
+
+        // run the UI
+        eframe::run_native(
+            "QName",
+            options,
+            Box::new(|cc| {
+                // add the egui context to the app.
+                // allows us to prepopulate the cache on startup
+                app.ctx = Arc::new(cc.egui_ctx.clone());
+
+                // add image support:
+                egui_extras::install_image_loaders(&cc.egui_ctx);
+                Box::new(app)
+            }),
+        )?;
+        Ok(())
     }
 
     fn next(&mut self, ctx: &egui::Context) {
