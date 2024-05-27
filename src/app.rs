@@ -74,8 +74,15 @@ impl AppConfig {
             options,
             Box::new(|cc| {
                 // add the egui context to the app.
-                // allows us to prepopulate the cache on startup
+                // allows us to work with the cache without explicitly passing it around.
                 app.ctx = Arc::new(cc.egui_ctx.clone());
+
+                // prepopulate cache on separate threads
+                let prepop: Vec<PathBuf> = [app.files.first(), app.files.get(1), app.files.last()]
+                    .into_iter()
+                    .filter_map(|x| x.cloned())
+                    .collect();
+                app.load_ahead(&prepop);
 
                 // add image support:
                 egui_extras::install_image_loaders(&cc.egui_ctx);
@@ -85,7 +92,7 @@ impl AppConfig {
         Ok(())
     }
 
-    fn next(&mut self, ctx: &egui::Context) {
+    fn next(&mut self) {
         if self.active >= self.files.len() - 1 {
             self.active = 0;
         } else {
@@ -105,10 +112,10 @@ impl AppConfig {
             self.files[self.active..self.active + ahead].to_vec()
         };
 
-        self.load_ahead(&files, ctx);
+        self.load_ahead(&files);
     }
 
-    fn prev(&mut self, ctx: &egui::Context) {
+    fn prev(&mut self) {
         if self.active == 0 {
             self.active = self.files.len() - 1;
         } else {
@@ -129,13 +136,13 @@ impl AppConfig {
             self.files[(i as usize)..self.active].to_vec()
         };
 
-        self.load_ahead(&files, ctx);
+        self.load_ahead(&files);
     }
 
     // same as load, but spawns a new thread for each
-    fn load_ahead(&self, paths: &[PathBuf], ctx: &egui::Context) {
+    fn load_ahead(&self, paths: &[PathBuf]) {
         for path in paths {
-            let ctx = ctx.clone();
+            let ctx = self.ctx.clone();
             let path = path.clone();
             self.runtime.spawn(async move {
                 Self::load(&path, &ctx);
@@ -171,8 +178,8 @@ impl AppConfig {
         &self.files[self.active]
     }
 
-    fn load_active(&self, ctx: &egui::Context) -> egui::Image {
-        Self::load(self.active_file(), ctx);
+    fn load_active(&self) -> egui::Image {
+        Self::load(self.active_file(), &self.ctx);
         egui::Image::from_uri(Self::to_uri(self.active_file()))
     }
 
@@ -187,13 +194,13 @@ impl AppConfig {
         }
     }
 
-    fn apply_rename(&mut self, ctx: &egui::Context) {
+    fn apply_rename(&mut self) {
         let mut to = self.working_dir.clone();
         to.push(self.mk_filename());
         std::fs::rename(self.active_file(), to.clone()).unwrap();
 
         // the image will never be refrenced by its old name again so evict it from the cache
-        ctx.forget_image(&Self::to_uri(self.active_file()));
+        self.ctx.forget_image(&Self::to_uri(self.active_file()));
 
         // update the list of filenames so the next refresh doesn't fail
         self.files[self.active] = to;
@@ -212,15 +219,15 @@ pub fn to_empty_state(schema: &Schema) -> State {
 impl eframe::App for AppConfig {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if ctx.input(|i| i.key_pressed(Key::ArrowLeft)) {
-            self.next(ctx);
+            self.next();
         }
 
         if ctx.input(|i| i.key_pressed(Key::ArrowRight)) {
-            self.prev(ctx);
+            self.prev();
         }
 
         if ctx.input(|i| i.key_pressed(Key::Enter)) {
-            self.apply_rename(ctx)
+            self.apply_rename()
         }
 
         egui::SidePanel::new(Side::Left, "keyword").show(ctx, |ui| {
@@ -243,7 +250,7 @@ impl eframe::App for AppConfig {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::both().show(ui, |ui| {
-                let image = self.load_active(ctx);
+                let image = self.load_active();
                 ui.add(image.rounding(10.0));
             });
         });
