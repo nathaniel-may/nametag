@@ -1,38 +1,23 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
-
 use crate::{filename, schema::Schema, State};
 use eframe::egui::{
     self,
-    load::BytesPoll,
     panel::{Side, TopBottomSide},
     Key, Label,
 };
 use rand::{rngs::ThreadRng, thread_rng};
 use std::{
-    fs::{read_dir, File},
-    io::Read,
-    path::PathBuf,
-    time::Duration,
+    error::Error as StdError,
+    path::{Path, PathBuf},
+    sync::Arc,
 };
-
-pub fn run(app: AppConfig) -> Result<(), eframe::Error> {
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([600.0, 800.0]),
-        ..Default::default()
-    };
-    eframe::run_native(
-        "QName",
-        options,
-        Box::new(|cc| {
-            // This gives us image support:
-            egui_extras::install_image_loaders(&cc.egui_ctx);
-            Box::new(app)
-        }),
-    )
-}
+use std::{
+    fs::{self, File},
+    io::Read,
+};
 
 #[derive(Clone, Debug)]
 pub struct AppConfig {
+    pub ctx: Arc<egui::Context>,
     pub working_dir: PathBuf,
     pub schema: Schema,
     pub active: usize,
@@ -43,11 +28,14 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn new(schema: Schema, working_dir: PathBuf) -> Self {
+    pub fn run_with(schema: Schema, working_dir: PathBuf) -> Result<(), Box<dyn StdError>> {
+        // collect all the names of the files in the working dir so they can be loaded in the background
         let mut files = vec![];
-        for path in read_dir(working_dir.clone()).unwrap() {
+        for path in fs::read_dir(&working_dir).unwrap() {
+            // TODO skip directories
             let p = path.unwrap();
             let filename = p.file_name().to_string_lossy().to_string();
+            // skip dotfiles and our schema file
             if !filename.starts_with('.') && filename != "schema.q" {
                 files.push(p.path());
             }
@@ -56,7 +44,9 @@ impl AppConfig {
         let ui_state = to_empty_state(&schema);
         let rng = thread_rng();
 
-        let mut config = AppConfig {
+        let mut app = AppConfig {
+            // dummy ctx that gets immediately overwritten.
+            ctx: Arc::new(egui::Context::default()),
             schema,
             ui_state,
             working_dir,
@@ -65,26 +55,48 @@ impl AppConfig {
             files,
             rng,
         };
-        config.gen_id();
-        config
+        app.gen_id();
+
+        // create the ui
+
+        let options = eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default().with_inner_size([600.0, 800.0]),
+            ..Default::default()
+        };
+
+        // run the UI
+        eframe::run_native(
+            "QName",
+            options,
+            Box::new(|cc| {
+                // add the egui context to the app.
+                // allows us to work with the cache without explicitly passing it around.
+                app.ctx = Arc::new(cc.egui_ctx.clone());
+
+                // add image support:
+                egui_extras::install_image_loaders(&cc.egui_ctx);
+                Box::new(app)
+            }),
+        )?;
+        Ok(())
     }
 
     fn next(&mut self) {
-        if self.active >= self.files.len() - 1 {
-            self.active = 0;
-        } else {
-            self.active += 1;
-        }
-        self.gen_id()
+        self.active = self.inc_file_index_by(1, self.active);
+        self.gen_id();
     }
 
     fn prev(&mut self) {
-        if self.active == 0 {
-            self.active = self.files.len() - 1;
-        } else {
-            self.active -= 1;
-        }
-        self.gen_id()
+        self.active = self.dec_file_index_by(1, self.active);
+        self.gen_id();
+    }
+
+    fn inc_file_index_by(&self, n: usize, current: usize) -> usize {
+        (current + n) % self.files.len()
+    }
+
+    fn dec_file_index_by(&self, n: usize, current: usize) -> usize {
+        (current as isize - n as isize).rem_euclid(self.files.len() as isize) as usize
     }
 
     fn gen_id(&mut self) {
@@ -105,9 +117,9 @@ impl AppConfig {
         }
     }
 
-    fn active_uri(&self) -> String {
+    fn to_uri(path: &Path) -> String {
         let mut uri = "bytes://".to_string();
-        uri.push_str(&self.active_file().to_string_lossy());
+        uri.push_str(&path.to_string_lossy());
         uri
     }
 
@@ -115,30 +127,18 @@ impl AppConfig {
         &self.files[self.active]
     }
 
-    // loads bytes from file into the context
-    fn load_active(&self, ctx: &egui::Context) -> egui::Image {
-        let uri = self.active_uri();
-        // check if this uri is already in the cache
-        match ctx.try_load_bytes(&uri) {
-            Ok(bytes) => loop {
-                match bytes {
-                    BytesPoll::Pending { .. } => std::thread::sleep(Duration::from_millis(50)),
-                    BytesPoll::Ready { bytes, .. } => {
-                        return egui::Image::from_bytes(uri.clone(), bytes)
-                    }
-                }
-            },
-            Err(_) => {
-                let mut buffer = vec![];
-                File::open(self.active_file())
-                    .unwrap()
-                    .read_to_end(&mut buffer)
-                    .unwrap();
-
-                ctx.include_bytes(self.active_uri(), buffer);
-                egui::Image::from_uri(self.active_uri())
-            }
+    fn load_active(&self) -> egui::Image {
+        let uri = Self::to_uri(self.active_file());
+        // skip the io if this uri is already in the cache
+        if self.ctx.try_load_bytes(&uri).is_err() {
+            let mut buffer = vec![];
+            File::open(self.active_file())
+                .unwrap()
+                .read_to_end(&mut buffer)
+                .unwrap();
+            self.ctx.include_bytes(uri.clone(), buffer);
         }
+        egui::Image::from_uri(uri)
     }
 
     fn apply_rename(&mut self) {
@@ -146,8 +146,10 @@ impl AppConfig {
         to.push(self.mk_filename());
         std::fs::rename(self.active_file(), to.clone()).unwrap();
 
-        // now that file has a different filename so we must update the system state of the folder
-        // so the next refresh doesn't fail
+        // the image will never be refrenced by its old name again so evict it from the cache
+        self.ctx.forget_image(&Self::to_uri(self.active_file()));
+
+        // update the list of filenames so the next refresh doesn't fail
         self.files[self.active] = to;
     }
 }
@@ -164,11 +166,11 @@ pub fn to_empty_state(schema: &Schema) -> State {
 impl eframe::App for AppConfig {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if ctx.input(|i| i.key_pressed(Key::ArrowLeft)) {
-            self.next();
+            self.prev();
         }
 
         if ctx.input(|i| i.key_pressed(Key::ArrowRight)) {
-            self.prev();
+            self.next();
         }
 
         if ctx.input(|i| i.key_pressed(Key::Enter)) {
@@ -195,7 +197,7 @@ impl eframe::App for AppConfig {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::both().show(ui, |ui| {
-                let image = self.load_active(ctx);
+                let image = self.load_active();
                 ui.add(image.rounding(10.0));
             });
         });

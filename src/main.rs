@@ -1,5 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
-use qname::app::{self, AppConfig};
+use qname::app::AppConfig;
 use std::error::Error as StdError;
 use std::path::PathBuf;
 use std::{env, fs};
@@ -10,7 +10,5 @@ fn main() -> Result<(), Box<dyn StdError>> {
     let mut schema_path = working_dir.clone();
     schema_path.push("schema.q");
     let schema = qname::fs::read_schema_file(&schema_path)?;
-    let config = AppConfig::new(schema, working_dir);
-    app::run(config)?;
-    Ok(())
+    AppConfig::run_with(schema, working_dir)
 }
