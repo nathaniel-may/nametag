@@ -24,6 +24,8 @@ pub struct AppConfig {
     pub file_id: String,
     pub ui_state: State,
     pub files: Vec<PathBuf>,
+    // None for infinite cache and preloading everything
+    pub file_cache_size: Option<usize>,
     pub rng: ThreadRng,
     pub runtime: Arc<tokio::runtime::Runtime>,
 }
@@ -47,6 +49,7 @@ impl AppConfig {
         let rng = thread_rng();
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let runtime = Arc::new(runtime);
+        let file_cache_size = if 30 >= files.len() { Some(30) } else { None };
 
         let mut app = AppConfig {
             // dummy ctx that gets immediately overwritten.
@@ -57,6 +60,7 @@ impl AppConfig {
             active: 0,
             file_id: "".to_string(),
             files,
+            file_cache_size,
             rng,
             runtime,
         };
@@ -79,11 +83,16 @@ impl AppConfig {
                 app.ctx = Arc::new(cc.egui_ctx.clone());
 
                 // prepopulate cache on separate threads
-                let prepop: Vec<PathBuf> = [app.files.first(), app.files.get(1), app.files.last()]
-                    .into_iter()
-                    .filter_map(|x| x.cloned())
-                    .collect();
-                app.load_ahead(&prepop);
+                if let Some(cache_size) = app.file_cache_size {
+                    // load upto the configured max
+                    let prev = cache_size / 2;
+                    let next = cache_size - prev;
+                    app.load_ahead(&app.files[..next]);
+                    app.load_ahead(&app.files[app.files.len() - prev..]);
+                } else {
+                    // load everything
+                    app.load_ahead(&app.files);
+                }
 
                 // add image support:
                 egui_extras::install_image_loaders(&cc.egui_ctx);
@@ -94,29 +103,36 @@ impl AppConfig {
     }
 
     fn next(&mut self) {
-        fn next_index(current: usize, max: usize) -> usize {
-            (current + 1) % max
+        // If there's a limited cache, preload the next one out, and drop the last one
+        if let Some(cache_size) = self.file_cache_size {
+            let prev = cache_size / 2;
+            let next = cache_size - prev;
+            let i = self.inc_file_index_by(next, self.active);
+            self.load_ahead(&[self.files[i].clone()]);
+            self.ctx.forget_image(&Self::to_uri(&self.files[prev]))
         }
-
-        self.active = next_index(self.active, self.files.len());
-        self.gen_id();
-
-        // we're preloading the next one every time we progress.
-        let i = next_index(self.active, self.files.len());
-        self.load_ahead(&[self.files[i].clone()]);
     }
 
     fn prev(&mut self) {
-        fn prev_index(current: usize, max: usize) -> usize {
-            (current as isize - 1).rem_euclid(max as isize) as usize
-        }
-
-        self.active = prev_index(self.active, self.files.len());
+        self.active = self.dec_file_index_by(1, self.active);
         self.gen_id();
 
-        // we're preloading the previous one every time we progress.
-        let i = prev_index(self.active, self.files.len());
-        self.load_ahead(&[self.files[i].clone()]);
+        // If there's a limited cache, preload the next one out, and drop the last one
+        if let Some(cache_size) = self.file_cache_size {
+            let prev = cache_size / 2;
+            let next = cache_size - prev;
+            let i = self.inc_file_index_by(prev, self.active);
+            self.load_ahead(&[self.files[i].clone()]);
+            self.ctx.forget_image(&Self::to_uri(&self.files[next]))
+        }
+    }
+
+    fn inc_file_index_by(&self, n: usize, current: usize) -> usize {
+        (current + n) % self.files.len()
+    }
+
+    fn dec_file_index_by(&self, n: usize, current: usize) -> usize {
+        (current as isize - n as isize).rem_euclid(self.files.len() as isize) as usize
     }
 
     // same as load, but spawns a new thread for each
