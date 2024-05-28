@@ -32,7 +32,6 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn run_with(schema: Schema, working_dir: PathBuf) -> Result<(), Box<dyn StdError>> {
-        println!("Run With");
         // collect all the names of the files in the working dir so they can be loaded in the background
         let mut files = vec![];
         for path in read_dir(working_dir.clone()).unwrap() {
@@ -49,7 +48,7 @@ impl AppConfig {
         let rng = thread_rng();
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let runtime = Arc::new(runtime);
-        let file_cache_size = if 30 >= files.len() { Some(30) } else { None };
+        let file_cache_size = if 30 < files.len() { Some(30) } else { None };
 
         let mut app = AppConfig {
             // dummy ctx that gets immediately overwritten.
@@ -88,7 +87,10 @@ impl AppConfig {
                     let prev = cache_size / 2;
                     let next = cache_size - prev;
                     app.load_ahead(&app.files[..next]);
-                    app.load_ahead(&app.files[app.files.len() - prev..]);
+                    // load from the current picture in the direction the user would scroll
+                    let mut backwards: Vec<PathBuf> = app.files[app.files.len() - prev..].to_vec();
+                    backwards.reverse();
+                    app.load_ahead(&backwards);
                 } else {
                     // load everything
                     app.load_ahead(&app.files);
@@ -103,6 +105,9 @@ impl AppConfig {
     }
 
     fn next(&mut self) {
+        self.active = self.inc_file_index_by(1, self.active);
+        self.gen_id();
+
         // If there's a limited cache, preload the next one out, and drop the last one
         if let Some(cache_size) = self.file_cache_size {
             let prev = cache_size / 2;
@@ -135,15 +140,15 @@ impl AppConfig {
         (current as isize - n as isize).rem_euclid(self.files.len() as isize) as usize
     }
 
-    // same as load, but spawns a new thread for each
+    // same as load, but spawns a new thread for the lot
     fn load_ahead(&self, paths: &[PathBuf]) {
-        for path in paths {
-            let ctx = self.ctx.clone();
-            let path = path.clone();
-            self.runtime.spawn(async move {
+        let ctx = self.ctx.clone();
+        let paths: Vec<PathBuf> = paths.to_vec();
+        self.runtime.spawn(async move {
+            for path in paths {
                 Self::load(&path, &ctx);
-            });
-        }
+            }
+        });
     }
 
     fn gen_id(&mut self) {
