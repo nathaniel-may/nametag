@@ -12,8 +12,10 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use tokio::fs::{self, File};
-use tokio::io::AsyncReadExt;
+use std::{
+    fs::{self, File},
+    io::Read,
+};
 
 #[derive(Clone, Debug)]
 pub struct AppConfig {
@@ -25,28 +27,24 @@ pub struct AppConfig {
     pub ui_state: State,
     pub files: Vec<PathBuf>,
     pub rng: ThreadRng,
-    pub runtime: Arc<tokio::runtime::Handle>,
 }
 
 impl AppConfig {
-    pub async fn run_with(schema: Schema, working_dir: PathBuf) -> Result<(), Box<dyn StdError>> {
+    pub fn run_with(schema: Schema, working_dir: PathBuf) -> Result<(), Box<dyn StdError>> {
         // collect all the names of the files in the working dir so they can be loaded in the background
         let mut files = vec![];
-        let mut entries = fs::read_dir(&working_dir).await?;
-
-        while let Some(entry) = entries.next_entry().await? {
+        for path in fs::read_dir(&working_dir).unwrap() {
             // TODO skip directories
-            let filename = entry.file_name().to_string_lossy().to_string();
+            let p = path.unwrap();
+            let filename = p.file_name().to_string_lossy().to_string();
             // skip dotfiles and our schema file
             if !filename.starts_with('.') && filename != "schema.q" {
-                files.push(entry.path());
+                files.push(p.path());
             }
         }
 
         let ui_state = to_empty_state(&schema);
         let rng = thread_rng();
-        let runtime = tokio::runtime::Handle::current();
-        let runtime = Arc::new(runtime);
 
         let mut app = AppConfig {
             // dummy ctx that gets immediately overwritten.
@@ -58,7 +56,6 @@ impl AppConfig {
             file_id: "".to_string(),
             files,
             rng,
-            runtime,
         };
         app.gen_id();
 
@@ -133,26 +130,17 @@ impl AppConfig {
     }
 
     fn load_active(&self) -> egui::Image {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                Self::load(self.active_file(), &self.ctx).await;
-                egui::Image::from_uri(Self::to_uri(self.active_file()))
-            })
-        })
+        Self::load(self.active_file(), &self.ctx);
+        egui::Image::from_uri(Self::to_uri(self.active_file()))
     }
 
     // loads bytes from file into the context
-    async fn load(path: &Path, ctx: &egui::Context) {
+    fn load(path: &Path, ctx: &egui::Context) {
         let uri = Self::to_uri(path);
         // skip if this uri is already in the cache
         if ctx.try_load_bytes(&uri).is_err() {
             let mut buffer = vec![];
-            File::open(path)
-                .await
-                .unwrap()
-                .read_to_end(&mut buffer)
-                .await
-                .unwrap();
+            File::open(path).unwrap().read_to_end(&mut buffer).unwrap();
             ctx.include_bytes(uri.clone(), buffer);
         }
     }

@@ -4,12 +4,11 @@ use std::error::Error as StdError;
 use std::path::PathBuf;
 use std::{env, fs};
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn StdError>> {
+fn main() -> Result<(), Box<dyn StdError>> {
     let args: Vec<String> = env::args().collect();
     let working_dir = fs::canonicalize(PathBuf::from(&args[1]))?;
     let mut schema_path = working_dir.clone();
     schema_path.push("schema.q");
     let schema = qname::fs::read_schema_file(&schema_path)?;
-    AppConfig::run_with(schema, working_dir).await
+    AppConfig::run_with(schema, working_dir)
 }
