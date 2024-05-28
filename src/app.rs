@@ -1,5 +1,3 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
-
 use crate::{filename, schema::Schema, State};
 use eframe::egui::{
     self,
@@ -130,19 +128,17 @@ impl AppConfig {
     }
 
     fn load_active(&self) -> egui::Image {
-        Self::load(self.active_file(), &self.ctx);
-        egui::Image::from_uri(Self::to_uri(self.active_file()))
-    }
-
-    // loads bytes from file into the context
-    fn load(path: &Path, ctx: &egui::Context) {
-        let uri = Self::to_uri(path);
-        // skip if this uri is already in the cache
-        if ctx.try_load_bytes(&uri).is_err() {
+        let uri = Self::to_uri(self.active_file());
+        // skip the io if this uri is already in the cache
+        if self.ctx.try_load_bytes(&uri).is_err() {
             let mut buffer = vec![];
-            File::open(path).unwrap().read_to_end(&mut buffer).unwrap();
-            ctx.include_bytes(uri.clone(), buffer);
+            File::open(self.active_file())
+                .unwrap()
+                .read_to_end(&mut buffer)
+                .unwrap();
+            self.ctx.include_bytes(uri.clone(), buffer);
         }
+        egui::Image::from_uri(uri)
     }
 
     fn apply_rename(&mut self) {
