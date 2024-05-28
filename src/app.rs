@@ -24,8 +24,6 @@ pub struct AppConfig {
     pub file_id: String,
     pub ui_state: State,
     pub files: Vec<PathBuf>,
-    // None for infinite cache and preloading everything
-    pub file_cache_size: Option<usize>,
     pub rng: ThreadRng,
     pub runtime: Arc<tokio::runtime::Handle>,
 }
@@ -49,7 +47,6 @@ impl AppConfig {
         let rng = thread_rng();
         let runtime = tokio::runtime::Handle::current();
         let runtime = Arc::new(runtime);
-        let file_cache_size = if 30 < files.len() { Some(30) } else { None };
 
         let mut app = AppConfig {
             // dummy ctx that gets immediately overwritten.
@@ -60,7 +57,6 @@ impl AppConfig {
             active: 0,
             file_id: "".to_string(),
             files,
-            file_cache_size,
             rng,
             runtime,
         };
@@ -82,21 +78,6 @@ impl AppConfig {
                 // allows us to work with the cache without explicitly passing it around.
                 app.ctx = Arc::new(cc.egui_ctx.clone());
 
-                // prepopulate cache on separate threads
-                if let Some(cache_size) = app.file_cache_size {
-                    // load upto the configured max
-                    let prev = cache_size / 2;
-                    let next = cache_size - prev;
-                    app.load_ahead(&app.files[..next]);
-                    // load from the current picture in the direction the user would scroll
-                    let mut backwards: Vec<PathBuf> = app.files[app.files.len() - prev..].to_vec();
-                    backwards.reverse();
-                    app.load_ahead(&backwards);
-                } else {
-                    // load everything
-                    app.load_ahead(&app.files);
-                }
-
                 // add image support:
                 egui_extras::install_image_loaders(&cc.egui_ctx);
                 Box::new(app)
@@ -108,29 +89,11 @@ impl AppConfig {
     fn next(&mut self) {
         self.active = self.inc_file_index_by(1, self.active);
         self.gen_id();
-
-        // If there's a limited cache, preload the next one out, and drop the last one
-        if let Some(cache_size) = self.file_cache_size {
-            let prev = cache_size / 2;
-            let next = cache_size - prev;
-            let i = self.inc_file_index_by(next, self.active);
-            self.load_ahead(&[self.files[i].clone()]);
-            self.ctx.forget_image(&Self::to_uri(&self.files[prev]))
-        }
     }
 
     fn prev(&mut self) {
         self.active = self.dec_file_index_by(1, self.active);
         self.gen_id();
-
-        // If there's a limited cache, preload the next one out, and drop the last one
-        if let Some(cache_size) = self.file_cache_size {
-            let prev = cache_size / 2;
-            let next = cache_size - prev;
-            let i = self.inc_file_index_by(prev, self.active);
-            self.load_ahead(&[self.files[i].clone()]);
-            self.ctx.forget_image(&Self::to_uri(&self.files[next]))
-        }
     }
 
     fn inc_file_index_by(&self, n: usize, current: usize) -> usize {
@@ -139,17 +102,6 @@ impl AppConfig {
 
     fn dec_file_index_by(&self, n: usize, current: usize) -> usize {
         (current as isize - n as isize).rem_euclid(self.files.len() as isize) as usize
-    }
-
-    // same as load, but spawns a new thread for the lot
-    fn load_ahead(&self, paths: &[PathBuf]) {
-        let ctx = self.ctx.clone();
-        let paths: Vec<PathBuf> = paths.to_vec();
-        self.runtime.spawn(async move {
-            for path in paths {
-                Self::load(&path, &ctx).await;
-            }
-        });
     }
 
     fn gen_id(&mut self) {
