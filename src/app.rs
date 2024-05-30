@@ -197,28 +197,30 @@ impl eframe::App for AppConfig {
         }
 
         egui::SidePanel::new(Side::Left, "keyword").show(ctx, |ui| {
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                ui.add(Label::new("Categories"));
-                let clear_button = ui
-                    .add(Button::new("Clear"))
-                    .on_hover_text("Clear all checkboxes");
+            egui::ScrollArea::both().show(ui, |ui| {
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.add(Label::new("Categories"));
+                    let clear_button = ui
+                        .add(Button::new("Clear"))
+                        .on_hover_text("Clear all checkboxes");
 
-                if clear_button.clicked() {
-                    self.clear_state();
-                }
-            });
-            ui.add_space(4.0);
-            ui.separator();
-            ui.add_space(4.0);
+                    if clear_button.clicked() {
+                        self.clear_state();
+                    }
+                });
+                ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(4.0);
 
-            self.ui_state.iter_mut().for_each(|cat| {
-                ui.label(cat.0.name.clone());
-                cat.1.iter_mut().for_each(|kw| {
-                    let name = kw.0.name.clone();
-                    ui.checkbox(&mut kw.1, name);
+                self.ui_state.iter_mut().for_each(|cat| {
+                    ui.label(cat.0.name.clone());
+                    cat.1.iter_mut().for_each(|kw| {
+                        let name = kw.0.name.clone();
+                        ui.checkbox(&mut kw.1, name);
+                    })
                 })
-            })
+            });
         });
 
         egui::TopBottomPanel::new(TopBottomSide::Top, "filename").show(ctx, |ui| {
