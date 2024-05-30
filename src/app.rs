@@ -7,7 +7,6 @@ use eframe::egui::{
 use rand::{rngs::ThreadRng, thread_rng};
 use std::{
     error::Error as StdError,
-    ffi::OsString,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -23,6 +22,7 @@ pub struct AppConfig {
     pub schema: Schema,
     pub active: usize,
     pub file_id: String,
+    pub zoom: f32,
     pub ui_state: State,
     pub files: Vec<PathBuf>,
     pub rng: ThreadRng,
@@ -53,6 +53,7 @@ impl AppConfig {
             working_dir,
             active: 0,
             file_id: "".to_string(),
+            zoom: 1.0,
             files,
             rng,
         };
@@ -99,11 +100,13 @@ impl AppConfig {
 
     fn next(&mut self) {
         self.active = self.inc_file_index_by(1, self.active);
+        self.zoom = 1.0;
         self.gen_id();
     }
 
     fn prev(&mut self) {
         self.active = self.dec_file_index_by(1, self.active);
+        self.zoom = 1.0;
         self.gen_id();
     }
 
@@ -243,9 +246,18 @@ impl eframe::App for AppConfig {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            self.zoom *= ctx.input(|i| i.zoom_delta());
+
             egui::ScrollArea::both().show(ui, |ui| {
-                let image = self.load_active();
-                ui.add(image.rounding(10.0));
+                let image = self
+                    .load_active()
+                    .rounding(10.0)
+                    .fit_to_fraction(egui::Vec2 {
+                        x: self.zoom,
+                        y: self.zoom,
+                    });
+
+                ui.add(image);
             });
         });
     }
