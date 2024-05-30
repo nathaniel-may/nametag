@@ -2,7 +2,7 @@ use crate::{filename, schema::Schema, State};
 use eframe::egui::{
     self,
     panel::{Side, TopBottomSide},
-    Key, Label,
+    Button, Checkbox, FontFamily, Key, Label, Style,
 };
 use rand::{rngs::ThreadRng, thread_rng};
 use std::{
@@ -60,7 +60,7 @@ impl AppConfig {
         // create the ui
 
         let options = eframe::NativeOptions {
-            viewport: egui::ViewportBuilder::default().with_inner_size([600.0, 800.0]),
+            viewport: egui::ViewportBuilder::default().with_inner_size([1200.0, 800.0]),
             ..Default::default()
         };
 
@@ -73,12 +73,27 @@ impl AppConfig {
                 // allows us to work with the cache without explicitly passing it around.
                 app.ctx = Arc::new(cc.egui_ctx.clone());
 
+                // set scale
+                app.ctx.set_pixels_per_point(1.25);
+
+                // set default styles
+                app.ctx.style_mut(|style| {
+                    style.override_font_id = Some(egui::FontId {
+                        size: 16.0,
+                        family: FontFamily::Proportional,
+                    });
+                });
+
                 // add image support:
                 egui_extras::install_image_loaders(&cc.egui_ctx);
                 Box::new(app)
             }),
         )?;
         Ok(())
+    }
+
+    fn clear_state(&mut self) {
+        self.ui_state = to_empty_state(&self.schema)
     }
 
     fn next(&mut self) {
@@ -178,6 +193,21 @@ impl eframe::App for AppConfig {
         }
 
         egui::SidePanel::new(Side::Left, "keyword").show(ctx, |ui| {
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.add(Label::new("Categories"));
+                let clear_button = ui
+                    .add(Button::new("Clear"))
+                    .on_hover_text("Clear all checkboxes");
+
+                if clear_button.clicked() {
+                    self.clear_state();
+                }
+            });
+            ui.add_space(4.0);
+            ui.separator();
+            ui.add_space(4.0);
+
             self.ui_state.iter_mut().for_each(|cat| {
                 ui.label(cat.0.name.clone());
                 cat.1.iter_mut().for_each(|kw| {
