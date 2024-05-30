@@ -2,7 +2,7 @@ use crate::{filename, schema::Schema, State};
 use eframe::egui::{
     self,
     panel::{Side, TopBottomSide},
-    Button, FontFamily, Hyperlink, Key, Label,
+    Button, Color32, FontFamily, Hyperlink, Key, Label,
 };
 use rand::{rngs::ThreadRng, thread_rng};
 use std::{
@@ -122,17 +122,18 @@ impl AppConfig {
         self.file_id = filename::gen_rand_id(&mut self.rng);
     }
 
-    fn mk_filename(&self) -> String {
-        let id = self.file_id.clone();
-        let filename = filename::generate(&self.schema, &self.ui_state);
-        let delim = self.schema.delim.clone();
-        let ext = match self.active_file().extension() {
-            Some(ext) => format!(".{}", ext.to_string_lossy()),
-            None => String::new(),
-        };
-        match filename {
-            Ok(name) => format!("{id}{delim}{name}{ext}"),
-            Err(e) => e.to_string(),
+    fn mk_filename(&self) -> Result<String, String> {
+        match filename::generate(&self.schema, &self.ui_state) {
+            Ok(name) => {
+                let id = self.file_id.clone();
+                let delim = self.schema.delim.clone();
+                let ext = match self.active_file().extension() {
+                    Some(ext) => format!(".{}", ext.to_string_lossy()),
+                    None => String::new(),
+                };
+                Ok(format!("{id}{delim}{name}{ext}"))
+            }
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -161,15 +162,18 @@ impl AppConfig {
     }
 
     fn apply_rename(&mut self) {
-        let mut to = self.working_dir.clone();
-        to.push(self.mk_filename());
-        std::fs::rename(self.active_file(), to.clone()).unwrap();
+        // only apply the rename if there isn't an error generating the new filename
+        if let Ok(filename) = self.mk_filename() {
+            let mut to = self.working_dir.clone();
+            to.push(filename);
+            std::fs::rename(self.active_file(), to.clone()).unwrap();
 
-        // the image will never be refrenced by its old name again so evict it from the cache
-        self.ctx.forget_image(&Self::to_uri(self.active_file()));
+            // the image will never be refrenced by its old name again so evict it from the cache
+            self.ctx.forget_image(&Self::to_uri(self.active_file()));
 
-        // update the list of filenames so the next refresh doesn't fail
-        self.files[self.active] = to;
+            // update the list of filenames so the next refresh doesn't fail
+            self.files[self.active] = to;
+        }
     }
 }
 
@@ -244,7 +248,17 @@ impl eframe::App for AppConfig {
                 ));
             });
 
-            ui.add(Label::new(format!("new name: {}", self.mk_filename())));
+            match self.mk_filename() {
+                Ok(name) => {
+                    ui.add(Label::new(format!("new name: {name}",)));
+                }
+                Err(msg) => {
+                    ui.horizontal(|ui| {
+                        ui.visuals_mut().override_text_color = Some(Color32::RED);
+                        ui.add(Label::new(format!("schema error: {msg}",)))
+                    });
+                }
+            }
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
