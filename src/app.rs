@@ -2,11 +2,12 @@ use crate::{filename, schema::Schema, State};
 use eframe::egui::{
     self,
     panel::{Side, TopBottomSide},
-    Button, Checkbox, FontFamily, Key, Label, Style,
+    Button, FontFamily, Hyperlink, Key, Label,
 };
 use rand::{rngs::ThreadRng, thread_rng};
 use std::{
     error::Error as StdError,
+    ffi::OsString,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -218,10 +219,26 @@ impl eframe::App for AppConfig {
         });
 
         egui::TopBottomPanel::new(TopBottomSide::Top, "filename").show(ctx, |ui| {
-            ui.add(Label::new(format!(
-                "filename: {}",
-                self.active_file().file_name().unwrap().to_string_lossy()
-            )));
+            ui.horizontal(|ui| {
+                ui.add(Label::new("filename:"));
+
+                let filename = self
+                    .active_file()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string();
+
+                ui.add(Hyperlink::from_label_and_url(
+                    &filename,
+                    format!(
+                        "file://{}/{}",
+                        self.working_dir.to_str().unwrap(),
+                        &filename
+                    ),
+                ));
+            });
+
             ui.add(Label::new(format!("new name: {}", self.mk_filename())));
         });
 
