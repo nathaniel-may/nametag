@@ -4,7 +4,9 @@ use eframe::egui::{
     panel::{Side, TopBottomSide},
     Key, Label,
 };
-use rand::{rngs::ThreadRng, thread_rng};
+use image::codecs::gif::GifDecoder;
+use image::AnimationDecoder;
+use rand::{rngs::ThreadRng, thread_rng, Rng};
 use std::{
     error::Error as StdError,
     path::{Path, PathBuf},
@@ -127,18 +129,48 @@ impl AppConfig {
         &self.files[self.active]
     }
 
-    fn load_active(&self) -> egui::Image {
+    fn load_active(&mut self) -> egui::Image {
+        let gif = self
+            .active_file()
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext == "gif")
+            .unwrap_or(false);
+        let mut gif_frames = 0;
+
         let uri = Self::to_uri(self.active_file());
         // skip the io if this uri is already in the cache
         if self.ctx.try_load_bytes(&uri).is_err() {
-            let mut buffer = vec![];
-            File::open(self.active_file())
-                .unwrap()
-                .read_to_end(&mut buffer)
-                .unwrap();
-            self.ctx.include_bytes(uri.clone(), buffer);
+            let mut file = File::open(self.active_file()).unwrap();
+            if gif {
+                println!("LOADING GIF");
+                let decoder = GifDecoder::new(file).unwrap();
+                let frames = decoder.into_frames();
+                let frames = frames.collect_frames().expect("error decoding gif");
+                gif_frames = frames.len();
+
+                for (i, frame) in frames.into_iter().enumerate() {
+                    let bytes = frame
+                        .buffer()
+                        .bytes()
+                        .collect::<Result<Vec<u8>, std::io::Error>>()
+                        .unwrap();
+                    self.ctx.include_bytes(format!("{uri}{i}"), bytes);
+                }
+            } else {
+                let mut buffer = vec![];
+                file.read_to_end(&mut buffer).unwrap();
+                self.ctx.include_bytes(uri.clone(), buffer);
+            }
         }
-        egui::Image::from_uri(uri)
+
+        if gif {
+            // TODO TESTING ONLY: displays a random frame if its a gif.
+            let i = self.rng.gen_range(0..gif_frames);
+            egui::Image::from_uri(format!("{uri}{i}"))
+        } else {
+            egui::Image::from_uri(uri)
+        }
     }
 
     fn apply_rename(&mut self) {
