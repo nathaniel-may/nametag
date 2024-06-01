@@ -1,4 +1,4 @@
-use crate::{filename, schema::Schema, State};
+use crate::{error::Result, filename, schema::Schema, State};
 use eframe::egui::{
     self,
     panel::{Side, TopBottomSide},
@@ -6,13 +6,11 @@ use eframe::egui::{
 };
 use rand::{rngs::ThreadRng, thread_rng};
 use std::{
-    error::Error as StdError,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
-use std::{
     fs::{self, File},
     io::Read,
+    path::{Path, PathBuf},
+    result::Result as StdResult,
+    sync::Arc,
 };
 
 #[derive(Clone, Debug)]
@@ -29,10 +27,12 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn run_with(schema: Schema, working_dir: PathBuf) -> Result<(), Box<dyn StdError>> {
+    pub fn run_with(schema: Schema, working_dir: PathBuf) -> Result<()> {
+        // TODO put this in crate::fs as its own function?
         // collect all the names of the files in the working dir so they can be loaded in the background
         let mut files = vec![];
-        for path in fs::read_dir(&working_dir).unwrap() {
+        let dir = fs::read_dir(&working_dir).unwrap();
+        for path in dir {
             // TODO skip directories
             let p = path.unwrap();
             let filename = p.file_name().to_string_lossy().to_string();
@@ -66,7 +66,7 @@ impl AppConfig {
             ..Default::default()
         };
 
-        // run the UI
+        // run the UI. Any errors returned from this function are fatal since the UI won't be created.
         eframe::run_native(
             "QName",
             options,
@@ -122,7 +122,7 @@ impl AppConfig {
         self.file_id = filename::gen_rand_id(&mut self.rng);
     }
 
-    fn mk_filename(&self) -> Result<String, String> {
+    fn mk_filename(&self) -> StdResult<String, String> {
         match filename::generate(&self.schema, &self.ui_state) {
             Ok(name) => {
                 let id = self.file_id.clone();

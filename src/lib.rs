@@ -12,7 +12,7 @@ use schema::{Category, Keyword};
 
 type State = Vec<(Category, Vec<(Keyword, bool)>)>;
 
-fn run() -> Result<()> {
+pub fn run() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     let working_dir = std::fs::canonicalize(PathBuf::from(&args[1]))?;
     let mut schema_path = working_dir.clone();
