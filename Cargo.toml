@@ -7,6 +7,14 @@ edition = "2021"
 name = "qname"
 path = "src/lib.rs"
 
+# referenced https://github.com/johnthagen/min-sized-rust
+# for some final binary size optimizations
+# [profile.release]
+# strip = true
+# lto = true
+# codegen-units = 1
+# panic = "abort"
+
 [dependencies]
 eframe = { version = "0.27", features = ["default"] }
 egui_extras = { version = "0.27.2", features = ["image"] }

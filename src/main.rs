@@ -4,7 +4,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     match qname::run() {
         Err(e) => {
-            eprintln!("{:?}", e);
+            eprintln!("{}", e);
             ExitCode::FAILURE
         }
         Ok(()) => ExitCode::SUCCESS,

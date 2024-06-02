@@ -16,3 +16,20 @@ Features
 - actually handle errors
 - clear all selected tags
 - Problem: you stop half way through and want to move out the named ones. Solution:??? (ideas: put renamed ones in another folder? or skip ones that match the schema? but what about going backwards to fix one)
+
+# build
+For a smaller binary, build with some nightly features. On my laptop it cuts the size down by more than half.
+```
+cargo +nightly build -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target aarch64-apple-darwin --release
+```
+
+For even smaller binary, you could use UPX. On my laptop it reduces the size by about another 40%:
+```
+upx --best --lzma target/aarch64-apple-darwin/release/qname
+```
+
+# install
+On my machine I use
+```
+sudo mv ./qname /usr/local/bin/qname
+```

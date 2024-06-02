@@ -7,6 +7,7 @@ pub type Result<T> = StdResult<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
+    // TODO remove this one for app=specific file system failures
     Fs(io::Error),
     Parse(SchemaParseError),
     Typecheck(SchemaTypeCheckError),
@@ -17,6 +18,7 @@ pub enum Error {
     FailedRename(io::Error),
     FailedToOpen(io::Error),
     LoggerFailed(SetGlobalDefaultError),
+    WorkingDirNotSpecified,
 }
 
 impl fmt::Display for Error {
@@ -35,6 +37,7 @@ impl fmt::Display for Error {
             FailedRename(e) => write!(f, "Failed rename: {e}"),
             FailedToOpen(e) => write!(f, "Failed to open file: {e}"),
             LoggerFailed(e) => write!(f, "Failed to set up logger: {e}"),
+            WorkingDirNotSpecified => write!(f, "Working dir not specified."),
         }
     }
 }
@@ -42,7 +45,7 @@ impl fmt::Display for Error {
 impl StdError for Error {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
-            EmptyWorkingDir => None,
+            EmptyWorkingDir | WorkingDirNotSpecified => None,
             Fs(e) => Some(e),
             Parse(e) => Some(e),
             Typecheck(e) => Some(e),
