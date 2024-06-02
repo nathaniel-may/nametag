@@ -18,4 +18,5 @@ env_logger = { version = "0.10", default-features = false, features = [
 # I used their github releases to figure it out.
 image = { version = "0.24", features = ["default"] }
 nom = "7.1.3"
+open = "5.1.3"
 rand = "0.8.5"

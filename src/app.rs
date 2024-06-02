@@ -7,7 +7,7 @@ use crate::{
 use eframe::egui::{
     self,
     panel::{Side, TopBottomSide},
-    Button, Color32, FontFamily, Hyperlink, Key, Label,
+    Button, Color32, FontFamily, Key, Label,
 };
 use rand::{rngs::ThreadRng, thread_rng};
 use std::{
@@ -273,15 +273,25 @@ impl eframe::App for AppConfig {
                     // filename errors should be handled by app logic. Just display an empty string till the app catches up.
                     .map_or(String::new(), |fname| fname.to_string_lossy().to_string());
 
-                ui.add(Hyperlink::from_label_and_url(
-                    &filename,
-                    format!(
-                        "file://{}/{}",
-                        // filename errors should be handled by app logic. Just display an empty string till the app catches up.
-                        self.working_dir.to_str().unwrap_or(""),
-                        &filename
-                    ),
-                ));
+                ui.add(Label::new(&filename));
+
+                let open_button = ui
+                    .add(Button::new("Open"))
+                    .on_hover_text("Open in the default app");
+
+                if open_button.clicked() {
+                    if let Err(_e) = open::that_detached(self.active_file()) {
+                        // TODO log error
+                        let url = format!(
+                            "file://{}/{}",
+                            // filename errors should be handled by app logic. Just display an empty string till the app catches up.
+                            self.working_dir.to_str().unwrap_or(""),
+                            &filename
+                        );
+                        // attempt to open in a browser instead ignoring failures
+                        let _ = open::that_detached(url);
+                    }
+                }
             });
 
             match self.mk_filename() {
