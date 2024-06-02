@@ -10,6 +10,10 @@ pub enum Error {
     Parse(SchemaParseError),
     Typecheck(SchemaTypeCheckError),
     Eframe(eframe::Error),
+    CantOpenWorkingDir(io::Error),
+    WorkingDirScan(io::Error),
+    EmptyWorkingDir,
+    FailedRename(io::Error),
 }
 
 impl fmt::Display for Error {
@@ -19,6 +23,14 @@ impl fmt::Display for Error {
             Parse(e) => write!(f, "{}", e),
             Typecheck(e) => write!(f, "{}", e),
             Eframe(e) => write!(f, "{}", e),
+            CantOpenWorkingDir(e) => write!(f, "Cannot open working directory: {}", e),
+            WorkingDirScan(e) => write!(
+                f,
+                "Encountered an error while scanning the working directory: {}",
+                e
+            ),
+            EmptyWorkingDir => write!(f, "Working directory has nothing to work with"),
+            FailedRename(e) => write!(f, "Failed rename: {}", e),
         }
     }
 }
@@ -30,6 +42,10 @@ impl StdError for Error {
             Parse(e) => Some(e),
             Typecheck(e) => Some(e),
             Eframe(e) => Some(e),
+            CantOpenWorkingDir(e) => Some(e),
+            WorkingDirScan(e) => Some(e),
+            FailedRename(e) => Some(e),
+            EmptyWorkingDir => None,
         }
     }
 }
