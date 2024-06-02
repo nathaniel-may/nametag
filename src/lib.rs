@@ -7,12 +7,21 @@ pub mod schema;
 use std::{env, path::PathBuf};
 
 use app::AppConfig;
-use error::Result;
+use error::{Error, Result};
 use schema::{Category, Keyword};
 
 type State = Vec<(Category, Vec<(Keyword, bool)>)>;
 
 pub fn run() -> Result<()> {
+    let subscriber = tracing_subscriber::fmt()
+        .compact()
+        .with_max_level(tracing::Level::INFO)
+        .with_line_number(false)
+        .with_thread_ids(false)
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber).map_err(Error::LoggerFailed)?;
+
     let args: Vec<String> = env::args().collect();
     let working_dir = std::fs::canonicalize(PathBuf::from(&args[1]))?;
     let mut schema_path = working_dir.clone();

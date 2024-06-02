@@ -1,5 +1,6 @@
 use crate::schema::{SchemaParseError, SchemaTypeCheckError};
 use std::{error::Error as StdError, fmt, io, result::Result as StdResult};
+use tracing::subscriber::SetGlobalDefaultError;
 use Error::*;
 
 pub type Result<T> = StdResult<T, Error>;
@@ -14,23 +15,26 @@ pub enum Error {
     WorkingDirScan(io::Error),
     EmptyWorkingDir,
     FailedRename(io::Error),
+    FailedToOpen(io::Error),
+    LoggerFailed(SetGlobalDefaultError),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Fs(e) => write!(f, "file system error: {}", e),
-            Parse(e) => write!(f, "{}", e),
-            Typecheck(e) => write!(f, "{}", e),
-            Eframe(e) => write!(f, "{}", e),
-            CantOpenWorkingDir(e) => write!(f, "Cannot open working directory: {}", e),
+            Fs(e) => write!(f, "file system error: {e}"),
+            Parse(e) => write!(f, "{e}"),
+            Typecheck(e) => write!(f, "{e}"),
+            Eframe(e) => write!(f, "{e}"),
+            CantOpenWorkingDir(e) => write!(f, "Cannot open working directory: {e}"),
             WorkingDirScan(e) => write!(
                 f,
-                "Encountered an error while scanning the working directory: {}",
-                e
+                "Encountered an error while scanning the working directory: {e}"
             ),
             EmptyWorkingDir => write!(f, "Working directory has nothing to work with"),
-            FailedRename(e) => write!(f, "Failed rename: {}", e),
+            FailedRename(e) => write!(f, "Failed rename: {e}"),
+            FailedToOpen(e) => write!(f, "Failed to open file: {e}"),
+            LoggerFailed(e) => write!(f, "Failed to set up logger: {e}"),
         }
     }
 }
@@ -38,6 +42,7 @@ impl fmt::Display for Error {
 impl StdError for Error {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
+            EmptyWorkingDir => None,
             Fs(e) => Some(e),
             Parse(e) => Some(e),
             Typecheck(e) => Some(e),
@@ -45,7 +50,8 @@ impl StdError for Error {
             CantOpenWorkingDir(e) => Some(e),
             WorkingDirScan(e) => Some(e),
             FailedRename(e) => Some(e),
-            EmptyWorkingDir => None,
+            FailedToOpen(e) => Some(e),
+            LoggerFailed(e) => Some(e),
         }
     }
 }

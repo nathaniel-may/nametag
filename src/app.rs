@@ -17,6 +17,7 @@ use std::{
     result::Result as StdResult,
     sync::Arc,
 };
+use tracing::{error, info};
 
 #[derive(Clone, Debug)]
 pub struct AppConfig {
@@ -37,6 +38,7 @@ impl AppConfig {
         // collect all the names of the files in the working dir so they can be loaded in the background
         let mut files = vec![];
         let dir = fs::read_dir(&working_dir).map_err(Error::CantOpenWorkingDir)?;
+        info!("Reading working directory");
         for path in dir {
             let entry = path.map_err(Error::WorkingDirScan)?;
             // skip sub directories
@@ -72,8 +74,7 @@ impl AppConfig {
         };
         app.gen_id();
 
-        // create the ui
-
+        info!("Building the UI");
         let options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default().with_inner_size([1200.0, 800.0]),
             ..Default::default()
@@ -168,8 +169,8 @@ impl AppConfig {
         }
 
         match File::open(self.active_file()) {
-            Err(_) => {
-                // TODO log this error.
+            Err(e) => {
+                error!("{e}");
                 // skip this file so the rest can still be worked with
                 self.files.remove(self.active);
                 // load the next one instead
@@ -178,8 +179,8 @@ impl AppConfig {
             Ok(mut file) => {
                 let mut buffer = vec![];
                 match file.read_to_end(&mut buffer) {
-                    Err(_) => {
-                        // TODO log this error.
+                    Err(e) => {
+                        error!("{e}");
                         // skip this file so the rest can still be worked with
                         self.files.remove(self.active);
                         // load the next one instead
@@ -198,11 +199,17 @@ impl AppConfig {
         // only apply the rename if there isn't an error generating the new filename
         if let Ok(filename) = self.mk_filename() {
             let mut to = self.working_dir.clone();
-            to.push(filename);
-            std::fs::rename(self.active_file(), to.clone())
-                .map_err(Error::FailedRename)
-                // TODO log error
-                .unwrap_or(());
+            to.push(&filename);
+            match std::fs::rename(self.active_file(), &to) {
+                Ok(()) => info!(
+                    "{} →  {}",
+                    self.active_file()
+                        .file_name()
+                        .map_or("old".into(), |os| os.to_string_lossy()),
+                    filename
+                ),
+                Err(e) => error!("{}", Error::FailedRename(e)),
+            };
 
             // the image will never be refrenced by its old name again so evict it from the cache
             self.ctx.forget_image(&Self::to_uri(self.active_file()));
@@ -280,8 +287,10 @@ impl eframe::App for AppConfig {
                     .on_hover_text("Open in the default app");
 
                 if open_button.clicked() {
-                    if let Err(_e) = open::that_detached(self.active_file()) {
-                        // TODO log error
+                    if let Err(e) =
+                        open::that_detached(self.active_file()).map_err(Error::FailedToOpen)
+                    {
+                        error!("{e}");
                         let url = format!(
                             "file://{}/{}",
                             // filename errors should be handled by app logic. Just display an empty string till the app catches up.
