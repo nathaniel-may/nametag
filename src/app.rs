@@ -1,6 +1,6 @@
 use crate::{
     error::{Error, Result},
-    filename,
+    filename, fs,
     schema::Schema,
     State,
 };
@@ -11,7 +11,7 @@ use eframe::egui::{
 };
 use rand::{rngs::ThreadRng, thread_rng};
 use std::{
-    fs::{self, File},
+    fs::File,
     io::Read,
     path::{Path, PathBuf},
     result::Result as StdResult,
@@ -34,23 +34,18 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn run_with(schema: Schema, working_dir: PathBuf) -> Result<()> {
-        // TODO put this in crate::fs as its own function?
-        // collect all the names of the files in the working dir so they can be loaded in the background
-        let mut files = vec![];
-        let dir = fs::read_dir(&working_dir).map_err(Error::CantOpenWorkingDir)?;
         info!("Reading working directory");
-        for path in dir {
-            let entry = path.map_err(Error::WorkingDirScan)?;
-            // skip sub directories
-            if !entry.path().is_dir() {
+        let files: Vec<PathBuf> = fs::collect_filenames(&working_dir)?
+            .into_iter()
+            .filter(|path| {
                 // since this string representation is only used to rule out certain files, it's safe to use even in cross-platform builds
-                let filename = entry.file_name().to_string_lossy().to_string();
+                let filename = path
+                    .file_name()
+                    .map_or(String::new(), |fname| fname.to_string_lossy().to_string());
                 // skip dotfiles and our schema file
-                if !filename.starts_with('.') && filename != "schema.q" {
-                    files.push(entry.path());
-                }
-            }
-        }
+                !filename.starts_with('.') && filename != "schema.q"
+            })
+            .collect();
 
         // UI must display the first image. Exit if there's nothing in the directory.
         if files.is_empty() {
