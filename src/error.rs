@@ -7,8 +7,6 @@ pub type Result<T> = StdResult<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    // TODO remove this one for app=specific file system failures
-    Fs(io::Error),
     Parse(SchemaParseError),
     Typecheck(SchemaTypeCheckError),
     Eframe(eframe::Error),
@@ -17,13 +15,14 @@ pub enum Error {
     EmptyWorkingDir,
     FailedRename(io::Error),
     FailedToOpen(io::Error),
+    FailedToReadContents(io::Error),
     LoggerFailed(SetGlobalDefaultError),
+    PathErr(io::Error),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Fs(e) => write!(f, "file system error: {e}"),
             Parse(e) => write!(f, "{e}"),
             Typecheck(e) => write!(f, "{e}"),
             Eframe(e) => write!(f, "{e}"),
@@ -36,6 +35,8 @@ impl fmt::Display for Error {
             FailedRename(e) => write!(f, "Failed rename: {e}"),
             FailedToOpen(e) => write!(f, "Failed to open file: {e}"),
             LoggerFailed(e) => write!(f, "Failed to set up logger: {e}"),
+            FailedToReadContents(e) => write!(f, "Failed read file contents: {e}"),
+            PathErr(e) => write!(f, "Issue with path: {e}"),
         }
     }
 }
@@ -44,7 +45,6 @@ impl StdError for Error {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
             EmptyWorkingDir => None,
-            Fs(e) => Some(e),
             Parse(e) => Some(e),
             Typecheck(e) => Some(e),
             Eframe(e) => Some(e),
@@ -53,13 +53,9 @@ impl StdError for Error {
             FailedRename(e) => Some(e),
             FailedToOpen(e) => Some(e),
             LoggerFailed(e) => Some(e),
+            FailedToReadContents(e) => Some(e),
+            PathErr(e) => Some(e),
         }
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        Fs(e)
     }
 }
 

@@ -31,7 +31,7 @@ pub fn run() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber).map_err(Error::LoggerFailed)?;
 
     // run the app
-    let working_dir = std::fs::canonicalize(args.working_dir)?;
+    let working_dir = std::fs::canonicalize(args.working_dir).map_err(Error::PathErr)?;
     let mut schema_path = working_dir.clone();
     schema_path.push("schema.q");
     let schema = fs::read_schema_file(&schema_path)?;
