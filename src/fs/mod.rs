@@ -14,9 +14,8 @@ pub fn read_schema_file(path: &Path) -> Result<Schema> {
     Ok(schema)
 }
 
+/// collects filenames of all non-directory entries in the given directory.
 pub fn collect_filenames(dir: &dyn AsRef<Path>) -> Result<Vec<PathBuf>> {
-    // TODO put this in crate::fs as its own function?
-    // collect all the names of the files in the working dir so they can be loaded in the background
     let mut files = vec![];
     let dir = fs::read_dir(dir).map_err(Error::CantOpenWorkingDir)?;
     for path in dir {
