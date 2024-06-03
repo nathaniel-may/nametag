@@ -9,13 +9,14 @@ path = "src/lib.rs"
 
 # referenced https://github.com/johnthagen/min-sized-rust
 # for some final binary size optimizations
-# [profile.release]
-# strip = true
-# lto = true
-# codegen-units = 1
-# panic = "abort"
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"
 
 [dependencies]
+clap = { version = "4.5.4", features = ["derive"] }
 eframe = { version = "0.27", features = ["default"] }
 egui_extras = { version = "0.27.2", features = ["image"] }
 env_logger = { version = "0.10", default-features = false, features = [
