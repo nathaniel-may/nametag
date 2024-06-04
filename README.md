@@ -25,6 +25,19 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i
 子曰。學而時習之、不亦說乎。有朋自遠方來、不亦樂乎。人不知而不慍、不亦君子乎。有子曰。其爲人也孝弟、而好犯上者、鮮矣。不好犯上、而好作亂者、未之有也。君子務本、本立而道生。孝弟也者、其爲仁之本與。子曰。巧言令色、鮮矣仁。曾子曰。吾日三省吾身、爲.jpg
 ```
 
+Table:
+```
++--------------+-----------------------+--------------------------------------+
+|    System    |     Max Filename      | Delimited 7 character tags available |
++--------------+-----------------------+--------------------------------------+
+| NTFS 3.1     | 255 characters        | 32                                   |
+| APFS         | 255 characters        | 32                                   |
+| ext4         | 255 bytes             | <= 32 with UTF-8 encoding            |
+| Dropbox      | 255 characters        | 32                                   |
+| Google Drive | unlimited characters? | unlimited?                           |
++--------------+-----------------------+--------------------------------------+
+```
+
 
 # usage
 
