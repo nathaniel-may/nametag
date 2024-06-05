@@ -1,19 +1,23 @@
-use crate::{filename, schema::Schema, State};
+use crate::{
+    error::{Error, Result},
+    filename, fs,
+    schema::Schema,
+    State,
+};
 use eframe::egui::{
     self,
     panel::{Side, TopBottomSide},
-    Button, Color32, FontFamily, Hyperlink, Key, Label,
+    Button, Color32, FontFamily, Key, Label,
 };
 use rand::{rngs::ThreadRng, thread_rng};
 use std::{
-    error::Error as StdError,
+    fs::File,
+    io::Read,
     path::{Path, PathBuf},
+    result::Result as StdResult,
     sync::Arc,
 };
-use std::{
-    fs::{self, File},
-    io::Read,
-};
+use tracing::{error, info};
 
 #[derive(Clone, Debug)]
 pub struct AppConfig {
@@ -29,17 +33,23 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn run_with(schema: Schema, working_dir: PathBuf) -> Result<(), Box<dyn StdError>> {
-        // collect all the names of the files in the working dir so they can be loaded in the background
-        let mut files = vec![];
-        for path in fs::read_dir(&working_dir).unwrap() {
-            // TODO skip directories
-            let p = path.unwrap();
-            let filename = p.file_name().to_string_lossy().to_string();
-            // skip dotfiles and our schema file
-            if !filename.starts_with('.') && filename != "schema.q" {
-                files.push(p.path());
-            }
+    pub fn run_with(schema: Schema, working_dir: PathBuf) -> Result<()> {
+        info!("Reading working directory");
+        let files: Vec<PathBuf> = fs::collect_filenames(&working_dir)?
+            .into_iter()
+            .filter(|path| {
+                // since this string representation is only used to rule out certain files, it's safe to use even in cross-platform builds
+                let filename = path
+                    .file_name()
+                    .map_or(String::new(), |fname| fname.to_string_lossy().to_string());
+                // skip dotfiles and our schema file
+                !filename.starts_with('.') && filename != "schema.q"
+            })
+            .collect();
+
+        // UI must display the first image. Exit if there's nothing in the directory.
+        if files.is_empty() {
+            return Err(Error::EmptyWorkingDir);
         }
 
         let ui_state = to_empty_state(&schema);
@@ -59,14 +69,13 @@ impl AppConfig {
         };
         app.gen_id();
 
-        // create the ui
-
+        info!("Building the UI");
         let options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default().with_inner_size([1200.0, 800.0]),
             ..Default::default()
         };
 
-        // run the UI
+        // run the UI. Any errors returned from this function are fatal since the UI won't be created.
         eframe::run_native(
             "QName",
             options,
@@ -122,7 +131,7 @@ impl AppConfig {
         self.file_id = filename::gen_rand_id(&mut self.rng);
     }
 
-    fn mk_filename(&self) -> Result<String, String> {
+    fn mk_filename(&self) -> StdResult<String, String> {
         match filename::generate(&self.schema, &self.ui_state) {
             Ok(name) => {
                 let id = self.file_id.clone();
@@ -147,26 +156,55 @@ impl AppConfig {
         &self.files[self.active]
     }
 
-    fn load_active(&self) -> egui::Image {
+    fn load_active(&mut self) -> egui::Image {
         let uri = Self::to_uri(self.active_file());
         // skip the io if this uri is already in the cache
-        if self.ctx.try_load_bytes(&uri).is_err() {
-            let mut buffer = vec![];
-            File::open(self.active_file())
-                .unwrap()
-                .read_to_end(&mut buffer)
-                .unwrap();
-            self.ctx.include_bytes(uri.clone(), buffer);
+        if self.ctx.try_load_bytes(&uri).is_ok() {
+            return egui::Image::from_uri(uri);
         }
-        egui::Image::from_uri(uri)
+
+        match File::open(self.active_file()) {
+            Err(e) => {
+                error!("{e}");
+                // skip this file so the rest can still be worked with
+                self.files.remove(self.active);
+                // load the next one instead
+                self.load_active()
+            }
+            Ok(mut file) => {
+                let mut buffer = vec![];
+                match file.read_to_end(&mut buffer) {
+                    Err(e) => {
+                        error!("{e}");
+                        // skip this file so the rest can still be worked with
+                        self.files.remove(self.active);
+                        // load the next one instead
+                        self.load_active()
+                    }
+                    Ok(_) => {
+                        self.ctx.include_bytes(uri.clone(), buffer);
+                        egui::Image::from_uri(uri)
+                    }
+                }
+            }
+        }
     }
 
     fn apply_rename(&mut self) {
         // only apply the rename if there isn't an error generating the new filename
         if let Ok(filename) = self.mk_filename() {
             let mut to = self.working_dir.clone();
-            to.push(filename);
-            std::fs::rename(self.active_file(), to.clone()).unwrap();
+            to.push(&filename);
+            match std::fs::rename(self.active_file(), &to) {
+                Ok(()) => info!(
+                    "{} →  {}",
+                    self.active_file()
+                        .file_name()
+                        .map_or("old".into(), |os| os.to_string_lossy()),
+                    filename
+                ),
+                Err(e) => error!("{}", Error::FailedRename(e)),
+            };
 
             // the image will never be refrenced by its old name again so evict it from the cache
             self.ctx.forget_image(&Self::to_uri(self.active_file()));
@@ -234,18 +272,30 @@ impl eframe::App for AppConfig {
                 let filename = self
                     .active_file()
                     .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .to_string();
+                    // filename errors should be handled by app logic. Just display an empty string till the app catches up.
+                    .map_or(String::new(), |fname| fname.to_string_lossy().to_string());
 
-                ui.add(Hyperlink::from_label_and_url(
-                    &filename,
-                    format!(
-                        "file://{}/{}",
-                        self.working_dir.to_str().unwrap(),
-                        &filename
-                    ),
-                ));
+                ui.add(Label::new(&filename));
+
+                let open_button = ui
+                    .add(Button::new("Open"))
+                    .on_hover_text("Open in the default app");
+
+                if open_button.clicked() {
+                    if let Err(e) =
+                        open::that_detached(self.active_file()).map_err(Error::FailedToOpen)
+                    {
+                        error!("{e}");
+                        let url = format!(
+                            "file://{}/{}",
+                            // filename errors should be handled by app logic. Just display an empty string till the app catches up.
+                            self.working_dir.to_str().unwrap_or(""),
+                            &filename
+                        );
+                        // attempt to open in a browser instead ignoring failures
+                        let _ = open::that_detached(url);
+                    }
+                }
             });
 
             match self.mk_filename() {
@@ -265,13 +315,11 @@ impl eframe::App for AppConfig {
             self.zoom *= ctx.input(|i| i.zoom_delta());
 
             egui::ScrollArea::both().show(ui, |ui| {
+                let zoom = self.zoom;
                 let image = self
                     .load_active()
                     .rounding(10.0)
-                    .fit_to_fraction(egui::Vec2 {
-                        x: self.zoom,
-                        y: self.zoom,
-                    });
+                    .fit_to_fraction(egui::Vec2 { x: zoom, y: zoom });
 
                 ui.add(image);
             });
