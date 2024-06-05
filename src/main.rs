@@ -2,7 +2,7 @@
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    match qname::run() {
+    match nametag::run() {
         Err(e) => {
             eprintln!("{}", e);
             ExitCode::FAILURE

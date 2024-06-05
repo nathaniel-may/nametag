@@ -1,4 +1,4 @@
-# qname
+# Nametag
 
 A tag manager that maximizes portability for your media files.
 
@@ -72,5 +72,5 @@ I tried UPX for even smaller artifacts, but it looks like [MacOS 13+ prevents th
 ## Install
 After building from source, I use
 ```
-sudo cp target/aarch64-apple-darwin/release/qname /usr/local/bin/qname
+sudo cp target/aarch64-apple-darwin/release/nametag /usr/local/bin/nametag
 ```
