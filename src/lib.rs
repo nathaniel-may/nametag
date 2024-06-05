@@ -4,7 +4,7 @@ pub mod filename;
 pub mod fs;
 pub mod schema;
 
-use app::AppConfig;
+use app::App;
 use clap::Parser;
 use error::{Error, Result};
 use schema::{Category, Keyword};
@@ -35,5 +35,5 @@ pub fn run() -> Result<()> {
     let mut schema_path = working_dir.clone();
     schema_path.push("schema.q");
     let schema = fs::read_schema_file(&schema_path)?;
-    AppConfig::run_with(schema, working_dir)
+    App::run_with(schema, working_dir)
 }

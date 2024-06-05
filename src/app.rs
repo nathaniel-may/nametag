@@ -20,7 +20,7 @@ use std::{
 use tracing::{error, info};
 
 #[derive(Clone, Debug)]
-pub struct AppConfig {
+pub struct App {
     pub ctx: Arc<egui::Context>,
     pub working_dir: PathBuf,
     pub schema: Schema,
@@ -32,7 +32,7 @@ pub struct AppConfig {
     pub rng: ThreadRng,
 }
 
-impl AppConfig {
+impl App {
     pub fn run_with(schema: Schema, working_dir: PathBuf) -> Result<()> {
         info!("Reading working directory");
         let files: Vec<PathBuf> = fs::collect_filenames(&working_dir)?
@@ -55,7 +55,7 @@ impl AppConfig {
         let ui_state = to_empty_state(&schema);
         let rng = thread_rng();
 
-        let mut app = AppConfig {
+        let mut app = App {
             // dummy ctx that gets immediately overwritten.
             ctx: Arc::new(egui::Context::default()),
             schema,
@@ -224,7 +224,7 @@ pub fn to_empty_state(schema: &Schema) -> State {
         .collect()
 }
 
-impl eframe::App for AppConfig {
+impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if ctx.input(|i| i.key_pressed(Key::ArrowLeft)) {
             self.prev();
