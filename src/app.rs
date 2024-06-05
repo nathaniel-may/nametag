@@ -77,7 +77,7 @@ impl AppConfig {
 
         // run the UI. Any errors returned from this function are fatal since the UI won't be created.
         eframe::run_native(
-            "QName",
+            "Nametag",
             options,
             Box::new(|cc| {
                 // add the egui context to the app.
