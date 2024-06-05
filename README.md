@@ -1,10 +1,12 @@
 # qname
 
-Organizing your media with keywords and tags across file formats traditionally requires 3rd party system lockin because the app stores metadata in a separate system to organize your files. Working within pre-defined metadata such as EXIF isn't possible across all file formats, and many popular tools strip that data because of its inconsitencies. The one thing every file has is a filename. This app lets you define a keword schema, and it encodes it into the filename so it can be queried by this app or whatever system you choose to store your files in. No lock-in, no incompatibilites.
+A tag manager that maximizes portability for your media files.
 
-# But filenames aren't unlimited!
+Organizing your media with keywords and tags across file formats usually requires 3rd party system lockin because the app stores your metadata in a separate system. Working with metadata standards such as EXIF isn't possible across all file formats, and many popular tools strip that data because of its inconsitencies. The one thing every file has is a filename. This app lets you define a keword schema, and encodes it in plaintext into the filename so it can be queried by this app or any rudimentary search bar in the system you use to store your files.
 
-Local filesystems and cloud services have different restrictions on allowed characters, lengths for filenames, and sometimes lengths for absolute paths. In practice, this isn't severely limiting. The most common file systems such as APFS, and NTFS 3.1 limit the length to 255 unicode characters. That means you could name your file:
+## But filenames aren't unlimited!
+
+Local filesystems and cloud services have different restrictions on allowed characters, lengths for filenames, and sometimes lengths for absolute paths. In practice, this isn't severely limiting. APFS and NTFS 3.1 limit the length to 255 unicode characters. That means you could name your file:
 ```
 Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dol.jpg
 ```
@@ -25,7 +27,7 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i
 子曰。學而時習之、不亦說乎。有朋自遠方來、不亦樂乎。人不知而不慍、不亦君子乎。有子曰。其爲人也孝弟、而好犯上者、鮮矣。不好犯上、而好作亂者、未之有也。君子務本、本立而道生。孝弟也者、其爲仁之本與。子曰。巧言令色、鮮矣仁。曾子曰。吾日三省吾身、爲.jpg
 ```
 
-Table:
+Table
 ```
 +--------------+-----------------------+--------------------------------------+
 |    System    |     Max Filename      | Delimited 7 character tags available |
@@ -39,30 +41,36 @@ Table:
 ```
 
 
-# usage
+## Usage
 
-_early stages of development- expect nothing to work_
+_early stages of development- expect nothing to work and everything to change_
 
-Have a directory with the media files you'd like to organize and include a file named `schema.q` in that directory which describes your desired schema. Run the app like so:
+Have a directory with the media files you'd like to organize and include a file named `schema.q` in that directory which describes your desired schema. Run the app from source like so:
 
 ```
-cargo run <path>
+cargo run -- <path>
 ```
 
-Future Features
+## Future Features
 - Query the filenames that match the schema.
-- Problem: you stop half way through and want to move out the named ones. Solution:??? (ideas: put renamed ones in another folder? or skip ones that match the schema? but what about going backwards to fix one)
+- Rename consecutive sets in the UI.
+- Run configuration to skip names that match the schema so you can "pick up where you left off"
+- Consolidate configuration
 
-# build
-For a smaller binary, build with some nightly features. On my laptop it cuts the size down by more than half.
+## Build
+```
+cargo build --release
+```
+
+Or for a smaller binary, build with some nightly features. On my laptop it cuts the size down by more than half.
 ```
 cargo +nightly build -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target aarch64-apple-darwin --release
 ```
 
-I tried UPX for even smaller artifacts, but it looks like [MacOS 13+ prevents them from running](https://github.com/upx/upx/issues/612)- an undocumented feature.
+I tried UPX for even smaller artifacts, but it looks like [MacOS 13+ prevents them from running](https://github.com/upx/upx/issues/612)- a seemingly undocumented feature.
 
-# install
-On my machine I use
+## Install
+After building from source, I use
 ```
 sudo cp target/aarch64-apple-darwin/release/qname /usr/local/bin/qname
 ```
