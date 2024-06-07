@@ -1,11 +1,89 @@
-use crate::error::{Error::ConfigParse, Result};
+use crate::{
+    error::{Error::ConfigParse, Result},
+    State,
+};
+#[cfg(test)]
+use quickcheck::Arbitrary;
 use serde::Deserialize;
-use std::fmt;
+use std::result::Result as StdResult;
+use std::{cmp, fmt};
+#[cfg(test)]
+use Requirement::*;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FilenameParseError {}
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize)]
 pub struct Schema {
     pub delim: String,
     pub categories: Vec<Category>,
+}
+
+impl Schema {
+    fn parse(&self, input: &str) -> StdResult<State, FilenameParseError> {
+        unimplemented!()
+    }
+}
+
+#[cfg(test)]
+mod prop_tests {
+    use quickcheck::{Arbitrary, Gen, QuickCheck};
+
+    use crate::State;
+
+    use super::Schema;
+
+    // schemas should be able to parse the filenames they generate
+    // TODO this does not include the salt and it should
+    #[test]
+    fn parse_generated_schemas() {
+        fn closed_loop(schema: Schema, state: State) -> bool {
+            match crate::filename::generate(&schema, &state) {
+                Err(_) => false,
+                Ok(filename) => match schema.parse(&filename) {
+                    Err(_) => false,
+                    Ok(parsed_state) => parsed_state == state,
+                },
+            }
+        }
+
+        QuickCheck::new()
+            .gen(Gen::new(5))
+            .quickcheck(closed_loop as fn(Schema, State) -> bool);
+    }
+}
+
+#[cfg(test)]
+impl Arbitrary for Schema {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+        let mut delim = char::arbitrary(g).to_string();
+        if bool::arbitrary(g) {
+            delim.push(char::arbitrary(g))
+        }
+
+        Schema {
+            delim,
+            categories: Arbitrary::arbitrary(g),
+        }
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        Box::new(
+            self.categories
+                .shrink()
+                .map(|categories| {
+                    let x = Schema {
+                        // two char delims will cause different problems than single char delims. don't shrink.
+                        delim: self.delim.clone(),
+                        categories,
+                    };
+                    println!("{x:?}");
+                    x
+                })
+                .collect::<Vec<_>>()
+                .into_iter(),
+        )
+    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize)]
@@ -16,11 +94,48 @@ pub struct Category {
     pub values: Vec<String>,
 }
 
+#[cfg(test)]
+impl Arbitrary for Category {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+        Category {
+            name: Arbitrary::arbitrary(g),
+            rtype: Arbitrary::arbitrary(g),
+            rvalue: *g.choose(&[0, 1, 2, 3]).unwrap(),
+            values: Arbitrary::arbitrary(g),
+        }
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        Box::new(
+            self.values
+                .shrink()
+                .map(|values| Category {
+                    name: self.name.shrink().next().unwrap_or(self.name.clone()),
+                    rtype: self.rtype,
+                    // relying on usize overflow semantics such that 0_usize - 1 == 0
+                    rvalue: self.rvalue - 1,
+                    values,
+                })
+                .collect::<Vec<_>>()
+                .into_iter(),
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Deserialize)]
 pub enum Requirement {
     Exactly,
     AtLeast,
     AtMost,
+}
+
+#[cfg(test)]
+impl Arbitrary for Requirement {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+        *g.choose(&[Exactly, AtLeast, AtMost]).unwrap()
+    }
+
+    // no way to shrink this value
 }
 
 impl fmt::Display for Requirement {
