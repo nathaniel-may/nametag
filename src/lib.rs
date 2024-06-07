@@ -7,11 +7,7 @@ pub mod schema;
 use app::App;
 use clap::Parser;
 use error::{Error, Result};
-use schema::Category;
 use std::path::PathBuf;
-
-// TODO this type needs fixing
-type State = Vec<(Category, Vec<(String, bool)>)>;
 
 #[derive(Parser, Debug, Clone)]
 struct Args {

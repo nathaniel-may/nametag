@@ -1,15 +1,18 @@
 use crate::{
     error::{Error, Result},
-    filename, fs,
+    filename::{self, gen_salt},
+    fs,
     schema::Schema,
-    State,
 };
 use eframe::egui::{
     self,
     panel::{Side, TopBottomSide},
     Button, Color32, FontFamily, Key, Label,
 };
-use rand::{rngs::ThreadRng, thread_rng};
+#[cfg(test)]
+use quickcheck::Arbitrary;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use std::{
     fs::File,
     io::Read,
@@ -18,6 +21,65 @@ use std::{
     sync::Arc,
 };
 use tracing::{error, info};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct State {
+    // salts are stored so they don't regenerate in the UI on every redraw
+    pub salt: String,
+    pub categories: Vec<UiCategory>,
+}
+
+#[cfg(test)]
+impl Arbitrary for State {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+        State {
+            salt: gen_salt(&mut ChaCha8Rng::seed_from_u64(Arbitrary::arbitrary(g))),
+            categories: Arbitrary::arbitrary(g),
+        }
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        Box::new(
+            self.categories
+                .shrink()
+                .map(|categories| State {
+                    salt: self.salt.clone(),
+                    categories,
+                })
+                .collect::<Vec<_>>()
+                .into_iter(),
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiCategory {
+    pub name: String,
+    pub values: Vec<(String, bool)>,
+}
+
+#[cfg(test)]
+impl Arbitrary for UiCategory {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+        UiCategory {
+            name: Arbitrary::arbitrary(g),
+            values: Arbitrary::arbitrary(g),
+        }
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        Box::new(
+            self.values
+                .shrink()
+                .map(|values| UiCategory {
+                    name: self.name.shrink().next().unwrap_or("".to_string()),
+                    values,
+                })
+                .collect::<Vec<_>>()
+                .into_iter(),
+        )
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct App {
@@ -29,7 +91,7 @@ pub struct App {
     pub zoom: f32,
     pub ui_state: State,
     pub files: Vec<PathBuf>,
-    pub rng: ThreadRng,
+    pub rng: ChaCha8Rng,
 }
 
 impl App {
@@ -52,8 +114,8 @@ impl App {
             return Err(Error::EmptyWorkingDir);
         }
 
-        let ui_state = to_empty_state(&schema);
-        let rng = thread_rng();
+        let mut rng = ChaCha8Rng::from_entropy();
+        let ui_state = to_empty_state(&schema, &mut rng);
 
         let mut app = App {
             // dummy ctx that gets immediately overwritten.
@@ -67,7 +129,6 @@ impl App {
             files,
             rng,
         };
-        app.gen_id();
 
         info!("Building the UI");
         let options = eframe::NativeOptions {
@@ -104,19 +165,19 @@ impl App {
     }
 
     fn clear_state(&mut self) {
-        self.ui_state = to_empty_state(&self.schema)
+        self.ui_state = to_empty_state(&self.schema, &mut self.rng)
     }
 
     fn next(&mut self) {
         self.active = self.inc_file_index_by(1, self.active);
         self.zoom = 1.0;
-        self.gen_id();
+        self.ui_state.salt = gen_salt(&mut self.rng);
     }
 
     fn prev(&mut self) {
         self.active = self.dec_file_index_by(1, self.active);
         self.zoom = 1.0;
-        self.gen_id();
+        self.ui_state.salt = gen_salt(&mut self.rng);
     }
 
     fn inc_file_index_by(&self, n: usize, current: usize) -> usize {
@@ -127,12 +188,8 @@ impl App {
         (current as isize - n as isize).rem_euclid(self.files.len() as isize) as usize
     }
 
-    fn gen_id(&mut self) {
-        self.file_id = filename::gen_rand_id(&mut self.rng);
-    }
-
-    fn mk_filename(&self) -> StdResult<String, String> {
-        match filename::generate(&self.schema, &self.ui_state) {
+    fn mk_filename(&mut self) -> StdResult<String, String> {
+        match filename::selection_to_filename(&self.schema, &self.ui_state) {
             Ok(name) => {
                 let id = self.file_id.clone();
                 let delim = self.schema.delim.clone();
@@ -215,18 +272,20 @@ impl App {
     }
 }
 
-pub fn to_empty_state(schema: &Schema) -> State {
-    schema
-        .categories
-        .clone()
-        .into_iter()
-        .map(|cat| {
-            (
-                cat.clone(),
-                cat.values.into_iter().map(|k| (k, false)).collect(),
-            )
-        })
-        .collect()
+// rng generates the first salt
+pub fn to_empty_state(schema: &Schema, rng: &mut ChaCha8Rng) -> State {
+    State {
+        salt: gen_salt(rng),
+        categories: schema
+            .categories
+            .clone()
+            .into_iter()
+            .map(|cat| UiCategory {
+                name: cat.name.clone(),
+                values: cat.values.into_iter().map(|k| (k, false)).collect(),
+            })
+            .collect(),
+    }
 }
 
 impl eframe::App for App {
@@ -260,9 +319,9 @@ impl eframe::App for App {
                 ui.separator();
                 ui.add_space(4.0);
 
-                self.ui_state.iter_mut().for_each(|cat| {
-                    ui.label(cat.0.name.clone());
-                    cat.1.iter_mut().for_each(|kw| {
+                self.ui_state.categories.iter_mut().for_each(|cat| {
+                    ui.label(cat.name.clone());
+                    cat.values.iter_mut().for_each(|kw| {
                         let name = kw.0.clone();
                         ui.checkbox(&mut kw.1, name);
                     })

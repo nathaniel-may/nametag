@@ -1,12 +1,10 @@
-use crate::{
-    error::{Error::ConfigParse, Result},
-    State,
-};
+use crate::app::State;
+use crate::error::{Error::ConfigParse, Result};
 #[cfg(test)]
 use quickcheck::Arbitrary;
 use serde::Deserialize;
+use std::fmt;
 use std::result::Result as StdResult;
-use std::{cmp, fmt};
 #[cfg(test)]
 use Requirement::*;
 
@@ -27,18 +25,24 @@ impl Schema {
 
 #[cfg(test)]
 mod prop_tests {
-    use quickcheck::{Arbitrary, Gen, QuickCheck};
-
-    use crate::State;
+    use crate::{app::State, filename::gen_salt};
 
     use super::Schema;
+    use quickcheck::{Gen, QuickCheck};
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
 
     // schemas should be able to parse the filenames they generate
     // TODO this does not include the salt and it should
     #[test]
     fn parse_generated_schemas() {
-        fn closed_loop(schema: Schema, state: State) -> bool {
-            match crate::filename::generate(&schema, &state) {
+        fn closed_loop(schema: Schema, state: State, seed: u64) -> bool {
+            let mut rng = ChaCha8Rng::seed_from_u64(seed);
+            // replace the arbitrary salt, so it can be used to compare
+            let mut state = state;
+            state.salt = gen_salt(&mut rng);
+
+            match crate::filename::selection_to_filename(&schema, &state) {
                 Err(_) => false,
                 Ok(filename) => match schema.parse(&filename) {
                     Err(_) => false,
@@ -49,7 +53,7 @@ mod prop_tests {
 
         QuickCheck::new()
             .gen(Gen::new(5))
-            .quickcheck(closed_loop as fn(Schema, State) -> bool);
+            .quickcheck(closed_loop as fn(Schema, State, u64) -> bool);
     }
 }
 
@@ -71,14 +75,10 @@ impl Arbitrary for Schema {
         Box::new(
             self.categories
                 .shrink()
-                .map(|categories| {
-                    let x = Schema {
-                        // two char delims will cause different problems than single char delims. don't shrink.
-                        delim: self.delim.clone(),
-                        categories,
-                    };
-                    println!("{x:?}");
-                    x
+                .map(|categories| Schema {
+                    // two char delims will cause different problems than single char delims. don't shrink.
+                    delim: self.delim.clone(),
+                    categories,
                 })
                 .collect::<Vec<_>>()
                 .into_iter(),

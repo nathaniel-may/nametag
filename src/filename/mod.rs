@@ -1,24 +1,23 @@
 pub mod parse;
 
-use crate::schema::{
-    Category,
-    Requirement::{self, *},
-    Schema,
+use crate::{
+    app::State,
+    schema::{
+        Requirement::{self, *},
+        Schema,
+    },
 };
-use crate::State;
 use core::fmt;
+use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
-use rand::{
-    distributions::{Distribution, Uniform},
-    rngs::ThreadRng,
-};
+use rand_chacha::ChaCha8Rng;
 use std::error::Error as StdError;
 use GenerateFilenameError::*;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GenerateFilenameError {
     RequirementMismatch {
-        category: Category,
+        category_name: String,
         expected: (Requirement, usize),
         selected: usize,
     },
@@ -28,13 +27,12 @@ impl fmt::Display for GenerateFilenameError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::RequirementMismatch {
-                category,
+                category_name,
                 expected: (rtype, rvalue),
                 selected,
             } => write!(
                 f,
-                "{} must have {rtype} {rvalue} tag but {selected} are selected.",
-                category.name
+                "{category_name} must have {rtype} {rvalue} tag but {selected} are selected."
             ),
         }
     }
@@ -42,27 +40,39 @@ impl fmt::Display for GenerateFilenameError {
 
 impl StdError for GenerateFilenameError {}
 
-pub fn generate(schema: &Schema, state: &State) -> Result<String, GenerateFilenameError> {
-    let mut name = String::new();
-    for (cat, kws) in state {
-        let tags: Vec<String> = kws
+pub fn selection_to_filename(
+    schema: &Schema,
+    state: &State,
+) -> Result<String, GenerateFilenameError> {
+    let mut name = state.salt.clone();
+    name.push_str(&schema.delim);
+    for cat in &state.categories[..] {
+        let cat_def = schema
+            .categories
+            .iter()
+            .find(|s_cat| s_cat.name == cat.name)
+            .unwrap();
+
+        let tags: Vec<String> = cat
+            .values
             .iter()
             .filter_map(|(tag, tf)| if *tf { Some(tag.clone()) } else { None })
             .collect();
-        match cat.rtype {
-            expected @ Exactly if tags.len() != cat.rvalue => Err(RequirementMismatch {
-                category: cat.clone(),
-                expected: (expected, cat.rvalue),
+
+        match cat_def.rtype {
+            expected @ Exactly if tags.len() != cat_def.rvalue => Err(RequirementMismatch {
+                category_name: cat.name.clone(),
+                expected: (expected, cat_def.rvalue),
                 selected: tags.len(),
             }),
-            expected @ AtMost if tags.len() > cat.rvalue => Err(RequirementMismatch {
-                category: cat.clone(),
-                expected: (expected, cat.rvalue),
+            expected @ AtMost if tags.len() > cat_def.rvalue => Err(RequirementMismatch {
+                category_name: cat.name.clone(),
+                expected: (expected, cat_def.rvalue),
                 selected: tags.len(),
             }),
-            expected @ AtLeast if tags.len() < (cat.rvalue) => Err(RequirementMismatch {
-                category: cat.clone(),
-                expected: (expected, cat.rvalue),
+            expected @ AtLeast if tags.len() < (cat_def.rvalue) => Err(RequirementMismatch {
+                category_name: cat.name.clone(),
+                expected: (expected, cat_def.rvalue),
                 selected: tags.len(),
             }),
             _ => {
@@ -83,7 +93,7 @@ pub fn generate(schema: &Schema, state: &State) -> Result<String, GenerateFilena
     Ok(name)
 }
 
-pub fn gen_rand_id(rng: &mut ThreadRng) -> String {
+pub fn gen_salt(rng: &mut ChaCha8Rng) -> String {
     (0..6)
         .map(|_| rng.sample(IDChars) as char)
         .collect::<String>()

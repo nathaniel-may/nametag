@@ -2451,6 +2451,7 @@ dependencies = [
  "open",
  "quickcheck",
  "rand",
+ "rand_chacha",
  "serde",
  "serde_dhall",
  "tracing",
