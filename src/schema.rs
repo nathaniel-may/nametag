@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Error::ConfigParse, Result};
 use serde::Deserialize;
 use std::fmt;
 
@@ -34,8 +34,9 @@ impl fmt::Display for Requirement {
 }
 
 pub fn parse_schema(contents: &str) -> Result<Schema> {
-    let schema = serde_dhall::from_str(contents).parse().unwrap(); // TODO map error type
-    Ok(schema)
+    serde_dhall::from_str(contents)
+        .parse()
+        .map_err(|e| ConfigParse(Box::new(e)))
 }
 
 #[cfg(test)]
