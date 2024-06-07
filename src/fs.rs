@@ -1,62 +1,15 @@
 use crate::{
     error::{Error, Result},
-    schema::Schema,
+    schema::{self, Schema},
 };
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
-// pub fn read_schema_file(path: &Path) -> Result<Schema> {
-//     let contents = fs::read_to_string(path).map_err(Error::FailedToReadContents)?;
-//     let parsed = schema::parse::parse(&contents)?;
-//     let schema = schema::typecheck::typecheck(parsed)?;
-//     Ok(schema)
-// }
-
 pub fn read_schema_file(path: &Path) -> Result<Schema> {
     let contents = fs::read_to_string(path).map_err(Error::FailedToReadContents)?;
-    let schema = serde_dhall::from_str(&contents).parse().unwrap(); // TODO map error type
-    Ok(schema)
-}
-
-#[cfg(test)]
-#[test]
-fn init_config_file_parses() {
-    use crate::schema::Category;
-    use crate::schema::Requirement::*;
-
-    let expected = Schema {
-        delim: "-".to_string(),
-        categories: vec![
-            Category {
-                name: "Medium".to_string(),
-                rtype: Exactly,
-                rvalue: 1,
-                values: vec![
-                    "art".to_string(),
-                    "photo".to_string(),
-                    "ai".to_string(),
-                    "other".to_string(),
-                ],
-            },
-            Category {
-                name: "Subject".to_string(),
-                rtype: AtLeast,
-                rvalue: 0,
-                values: vec![
-                    "plants".to_string(),
-                    "animals".to_string(),
-                    "people".to_string(),
-                ],
-            },
-        ],
-    };
-
-    match read_schema_file(Path::new("./src/init.dhall")) {
-        Err(e) => panic!("{e}"),
-        Ok(schema) => assert_eq!(expected, schema),
-    }
+    schema::parse_schema(&contents)
 }
 
 /// collects filenames of all non-directory entries in the given directory.
