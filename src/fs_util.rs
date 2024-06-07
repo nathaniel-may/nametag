@@ -1,16 +1,8 @@
-use crate::{
-    error::{Error, Result},
-    schema::{self, Schema},
-};
+use crate::error::{Error, Result};
 use std::{
     fs,
     path::{Path, PathBuf},
 };
-
-pub fn read_schema_file(path: &Path) -> Result<Schema> {
-    let contents = fs::read_to_string(path).map_err(Error::FailedToReadContents)?;
-    schema::parse_schema(&contents)
-}
 
 /// collects filenames of all non-directory entries in the given directory.
 pub fn collect_filenames(dir: &dyn AsRef<Path>) -> Result<Vec<PathBuf>> {

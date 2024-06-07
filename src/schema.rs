@@ -24,40 +24,6 @@ impl Schema {
 }
 
 #[cfg(test)]
-mod prop_tests {
-    use crate::{app::State, filename::gen_salt};
-
-    use super::Schema;
-    use quickcheck::{Gen, QuickCheck};
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha8Rng;
-
-    // schemas should be able to parse the filenames they generate
-    // TODO this does not include the salt and it should
-    #[test]
-    fn parse_generated_schemas() {
-        fn closed_loop(schema: Schema, state: State, seed: u64) -> bool {
-            let mut rng = ChaCha8Rng::seed_from_u64(seed);
-            // replace the arbitrary salt, so it can be used to compare
-            let mut state = state;
-            state.salt = gen_salt(&mut rng);
-
-            match crate::filename::selection_to_filename(&schema, &state) {
-                Err(_) => false,
-                Ok(filename) => match schema.parse(&filename) {
-                    Err(_) => false,
-                    Ok(parsed_state) => parsed_state == state,
-                },
-            }
-        }
-
-        QuickCheck::new()
-            .gen(Gen::new(5))
-            .quickcheck(closed_loop as fn(Schema, State, u64) -> bool);
-    }
-}
-
-#[cfg(test)]
 impl Arbitrary for Schema {
     fn arbitrary(g: &mut quickcheck::Gen) -> Self {
         let mut delim = char::arbitrary(g).to_string();
@@ -112,8 +78,7 @@ impl Arbitrary for Category {
                 .map(|values| Category {
                     name: self.name.shrink().next().unwrap_or(self.name.clone()),
                     rtype: self.rtype,
-                    // relying on usize overflow semantics such that 0_usize - 1 == 0
-                    rvalue: self.rvalue - 1,
+                    rvalue: if self.rvalue == 0 { 0 } else { self.rvalue - 1 },
                     values,
                 })
                 .collect::<Vec<_>>()
@@ -154,7 +119,6 @@ pub fn parse_schema(contents: &str) -> Result<Schema> {
         .map_err(|e| ConfigParse(Box::new(e)))
 }
 
-#[cfg(test)]
 #[test]
 fn init_config_file_parses() {
     use std::fs;
@@ -193,5 +157,51 @@ fn init_config_file_parses() {
     match parse_schema(&fs::read_to_string(Path::new("./src/init.dhall")).unwrap()) {
         Err(e) => panic!("{e}"),
         Ok(schema) => assert_eq!(expected, schema),
+    }
+}
+
+#[cfg(test)]
+mod prop_tests {
+    use crate::app::to_empty_state;
+
+    use super::Schema;
+    use quickcheck::{Gen, QuickCheck};
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+
+    // schemas should be able to parse the filenames they generate
+    // TODO this does not include the salt and it should
+    #[test]
+    fn parse_generated_schemas() {
+        fn closed_loop(schema: Schema, selection: u32, seed: u64) -> bool {
+            // quickcheck doesn't have a great way to generate bool values larger than the gen size
+            // so I'm using this u32 like each bit is an arbitrary bool.
+            let mut bool_selection = Vec::with_capacity(32);
+            for i in 0..32 {
+                let test = 1 << i;
+                bool_selection.push(test & selection == test)
+            }
+
+            let mut rng = ChaCha8Rng::seed_from_u64(seed);
+            let mut state = to_empty_state(&schema, &mut rng);
+            let mut selection = bool_selection.to_vec();
+            for cat in &mut state.categories[..] {
+                let tags = cat.values.clone().into_iter().map(|(s, _)| s);
+                let size = tags.len();
+                cat.values = tags.zip(selection.drain(0..size)).collect();
+            }
+
+            match crate::filename::selection_to_filename(&schema, &state) {
+                Err(_) => false,
+                Ok(filename) => match schema.parse(&filename) {
+                    Err(_) => false,
+                    Ok(parsed_state) => parsed_state == state,
+                },
+            }
+        }
+
+        QuickCheck::new()
+            .gen(Gen::new(5))
+            .quickcheck(closed_loop as fn(Schema, u32, u64) -> bool);
     }
 }

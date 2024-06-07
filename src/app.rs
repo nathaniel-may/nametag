@@ -1,7 +1,7 @@
 use crate::{
     error::{Error, Result},
     filename::{self, gen_salt},
-    fs,
+    fs_util,
     schema::Schema,
 };
 use eframe::egui::{
@@ -97,7 +97,7 @@ pub struct App {
 impl App {
     pub fn run_with(schema: Schema, working_dir: PathBuf) -> Result<()> {
         info!("Reading working directory");
-        let files: Vec<PathBuf> = fs::collect_filenames(&working_dir)?
+        let files: Vec<PathBuf> = fs_util::collect_filenames(&working_dir)?
             .into_iter()
             .filter(|path| {
                 // since this string representation is only used to rule out certain files, it's safe to use even in cross-platform builds

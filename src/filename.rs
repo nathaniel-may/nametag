@@ -1,5 +1,3 @@
-pub mod parse;
-
 use crate::{
     app::State,
     schema::{
@@ -51,6 +49,7 @@ pub fn selection_to_filename(
             .categories
             .iter()
             .find(|s_cat| s_cat.name == cat.name)
+            // since States are generated from Schemas, this should be safe
             .unwrap();
 
         let tags: Vec<String> = cat

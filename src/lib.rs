@@ -1,13 +1,13 @@
 pub mod app;
 pub mod error;
 pub mod filename;
-pub mod fs;
+pub mod fs_util;
 pub mod schema;
 
 use app::App;
 use clap::Parser;
 use error::{Error, Result};
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 
 #[derive(Parser, Debug, Clone)]
 struct Args {
@@ -31,6 +31,7 @@ pub fn run() -> Result<()> {
     let working_dir = std::fs::canonicalize(args.working_dir).map_err(Error::PathErr)?;
     let mut schema_path = working_dir.clone();
     schema_path.push("schema.dhall");
-    let schema = fs::read_schema_file(&schema_path)?;
+    let contents = fs::read_to_string(schema_path).map_err(Error::FailedToReadContents)?;
+    let schema = schema::parse_schema(&contents)?;
     App::run_with(schema, working_dir)
 }
