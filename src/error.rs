@@ -1,4 +1,3 @@
-use crate::schema::{SchemaParseError, SchemaTypeCheckError};
 use std::{error::Error as StdError, fmt, io, result::Result as StdResult};
 use tracing::subscriber::SetGlobalDefaultError;
 use Error::*;
@@ -7,8 +6,6 @@ pub type Result<T> = StdResult<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    Parse(SchemaParseError),
-    Typecheck(SchemaTypeCheckError),
     Eframe(eframe::Error),
     CantOpenWorkingDir(io::Error),
     WorkingDirScan(io::Error),
@@ -23,8 +20,6 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Parse(e) => write!(f, "{e}"),
-            Typecheck(e) => write!(f, "{e}"),
             Eframe(e) => write!(f, "{e}"),
             CantOpenWorkingDir(e) => write!(f, "Cannot open working directory: {e}"),
             WorkingDirScan(e) => write!(
@@ -45,8 +40,6 @@ impl StdError for Error {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
             EmptyWorkingDir => None,
-            Parse(e) => Some(e),
-            Typecheck(e) => Some(e),
             Eframe(e) => Some(e),
             CantOpenWorkingDir(e) => Some(e),
             WorkingDirScan(e) => Some(e),
@@ -56,18 +49,6 @@ impl StdError for Error {
             FailedToReadContents(e) => Some(e),
             PathErr(e) => Some(e),
         }
-    }
-}
-
-impl From<SchemaParseError> for Error {
-    fn from(e: SchemaParseError) -> Self {
-        Parse(e)
-    }
-}
-
-impl From<SchemaTypeCheckError> for Error {
-    fn from(e: SchemaTypeCheckError) -> Self {
-        Typecheck(e)
     }
 }
 

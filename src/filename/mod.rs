@@ -19,7 +19,7 @@ use GenerateFilenameError::*;
 pub enum GenerateFilenameError {
     RequirementMismatch {
         category: Category,
-        expected: Requirement,
+        expected: (Requirement, usize),
         got: usize,
     },
 }
@@ -27,7 +27,7 @@ pub enum GenerateFilenameError {
 impl fmt::Display for GenerateFilenameError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::RequirementMismatch { category, expected, got } => write!(f, "Category {} has a tag requirement of {expected}, but there were {got} keywords found.", category.name)
+            Self::RequirementMismatch { category, expected: (rtype, rvalue), got } => write!(f, "Category {} has a tag requirement of <{rtype} {rvalue}>, but there were {got} keywords found.", category.name)
         }
     }
 }
@@ -37,32 +37,31 @@ impl StdError for GenerateFilenameError {}
 pub fn generate(schema: &Schema, state: &State) -> Result<String, GenerateFilenameError> {
     let mut name = String::new();
     for (cat, kws) in state {
-        let ids: Vec<String> = kws
+        let tags: Vec<String> = kws
             .iter()
-            .filter_map(|(kw, tf)| if *tf { Some(kw.id.clone()) } else { None })
+            .filter_map(|(tag, tf)| if *tf { Some(tag.clone()) } else { None })
             .collect();
-        match cat.requirement {
-            expected @ Exactly(n) if ids.len() != (n as usize) => Err(RequirementMismatch {
+        match cat.rtype {
+            expected @ Exactly if tags.len() != cat.rvalue => Err(RequirementMismatch {
                 category: cat.clone(),
-                expected,
-                got: ids.len(),
+                expected: (expected, cat.rvalue),
+                got: tags.len(),
             }),
-            expected @ AtMost(n) if ids.len() > (n as usize) => Err(RequirementMismatch {
+            expected @ AtMost if tags.len() > cat.rvalue => Err(RequirementMismatch {
                 category: cat.clone(),
-                expected,
-                got: ids.len(),
+                expected: (expected, cat.rvalue),
+                got: tags.len(),
             }),
-            expected @ AtLeast(n) if ids.len() < (n as usize) => Err(RequirementMismatch {
+            expected @ AtLeast if tags.len() < (cat.rvalue) => Err(RequirementMismatch {
                 category: cat.clone(),
-                expected,
-                got: ids.len(),
+                expected: (expected, cat.rvalue),
+                got: tags.len(),
             }),
             _ => {
-                if ids.is_empty() {
-                    name.push_str(&schema.empty);
+                if tags.is_empty() {
                     name.push_str(&schema.delim)
                 }
-                for id in ids {
+                for id in tags {
                     name.push_str(&id);
                     name.push_str(&schema.delim)
                 }

@@ -220,7 +220,12 @@ pub fn to_empty_state(schema: &Schema) -> State {
         .categories
         .clone()
         .into_iter()
-        .map(|(cat, kws)| (cat, kws.into_iter().map(|k| (k, false)).collect()))
+        .map(|cat| {
+            (
+                cat.clone(),
+                cat.values.into_iter().map(|k| (k, false)).collect(),
+            )
+        })
         .collect()
 }
 
@@ -258,7 +263,7 @@ impl eframe::App for App {
                 self.ui_state.iter_mut().for_each(|cat| {
                     ui.label(cat.0.name.clone());
                     cat.1.iter_mut().for_each(|kw| {
-                        let name = kw.0.name.clone();
+                        let name = kw.0.clone();
                         ui.checkbox(&mut kw.1, name);
                     })
                 })
