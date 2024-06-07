@@ -1,5 +1,12 @@
-use crate::app::State;
+use crate::app::{to_empty_state, State, UiCategory};
 use crate::error::{Error::ConfigParse, Result};
+use nom::branch::alt;
+use nom::bytes::complete::tag;
+use nom::bytes::streaming::take_until;
+use nom::combinator::{eof, fail};
+use nom::error::ParseError;
+use nom::multi::many0;
+use nom::sequence::terminated;
 #[cfg(test)]
 use quickcheck::Arbitrary;
 use serde::Deserialize;
@@ -19,7 +26,46 @@ pub struct Schema {
 
 impl Schema {
     fn parse(&self, input: &str) -> StdResult<State, FilenameParseError> {
-        unimplemented!()
+        fn to_alt<'a, E>(
+            tags: &'a [String],
+        ) -> impl Fn(&'a str) -> nom::IResult<&'a str, &'a str, E>
+        where
+            E: ParseError<&'a str>,
+        {
+            move |i: &'a str| match tags {
+                [] => fail(i),
+                [h, t @ ..] => alt((tag(h.as_str()), to_alt(t)))(i),
+            }
+        }
+
+        let (input, salt) = take_until(self.delim.as_str())(input).unwrap();
+        let salt = salt.to_string();
+        let mut input = input;
+
+        let mut categories = Vec::with_capacity(self.categories.len());
+
+        for cat in self.categories {
+            let tag_parser = to_alt(&cat.values);
+            let (i, tags) =
+                many0(terminated(tag_parser, alt((tag(self.delim.as_str()), eof))))(input).unwrap();
+
+            // update input
+            input = i;
+
+            let values = cat
+                .values
+                .into_iter()
+                .map(|name| (name, tags.contains(&&name.as_str())))
+                .collect();
+
+            categories.push(UiCategory {
+                name: cat.name.clone(),
+                values,
+            });
+        }
+
+        let state = State { salt, categories };
+        Ok(state)
     }
 }
 
