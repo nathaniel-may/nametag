@@ -25,9 +25,9 @@ pub enum Requirement {
 impl fmt::Display for Requirement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Exactly => write!(f, "Exactly"),
-            Self::AtLeast => write!(f, "AtLeast"),
-            Self::AtMost => write!(f, "AtMost"),
+            Self::Exactly => write!(f, "exactly"),
+            Self::AtLeast => write!(f, "at least"),
+            Self::AtMost => write!(f, "at most"),
         }
     }
 }

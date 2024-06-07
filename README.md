@@ -46,13 +46,14 @@ Table
 
 _early stages of development- expect nothing to work and everything to change_
 
-Have a directory with the media files you'd like to organize and include a file named `schema.q` in that directory which describes your desired schema. Run the app from source like so:
+Have a directory with the media files you'd like to organize and include a file named `schema.dhall` in that directory which describes your desired schema. Run the app from source like so:
 
 ```
 cargo run -- <path>
 ```
 
 ## Future Features
+- An init command that copies the starter config file
 - Query the filenames that match the schema.
 - Rename consecutive sets in the UI.
 - Run configuration to skip names that match the schema so you can "pick up where you left off"

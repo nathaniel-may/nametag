@@ -34,7 +34,7 @@ pub fn run() -> Result<()> {
     // run the app
     let working_dir = std::fs::canonicalize(args.working_dir).map_err(Error::PathErr)?;
     let mut schema_path = working_dir.clone();
-    schema_path.push("schema.q");
+    schema_path.push("schema.dhall");
     let schema = fs::read_schema_file(&schema_path)?;
     App::run_with(schema, working_dir)
 }

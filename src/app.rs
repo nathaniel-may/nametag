@@ -43,7 +43,7 @@ impl App {
                     .file_name()
                     .map_or(String::new(), |fname| fname.to_string_lossy().to_string());
                 // skip dotfiles and our schema file
-                !filename.starts_with('.') && filename != "schema.q"
+                !filename.starts_with('.') && filename != "schema.dhall"
             })
             .collect();
 

@@ -20,14 +20,22 @@ pub enum GenerateFilenameError {
     RequirementMismatch {
         category: Category,
         expected: (Requirement, usize),
-        got: usize,
+        selected: usize,
     },
 }
 
 impl fmt::Display for GenerateFilenameError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::RequirementMismatch { category, expected: (rtype, rvalue), got } => write!(f, "Category {} has a tag requirement of <{rtype} {rvalue}>, but there were {got} keywords found.", category.name)
+            Self::RequirementMismatch {
+                category,
+                expected: (rtype, rvalue),
+                selected,
+            } => write!(
+                f,
+                "{} must have {rtype} {rvalue} tag but {selected} are selected.",
+                category.name
+            ),
         }
     }
 }
@@ -45,17 +53,17 @@ pub fn generate(schema: &Schema, state: &State) -> Result<String, GenerateFilena
             expected @ Exactly if tags.len() != cat.rvalue => Err(RequirementMismatch {
                 category: cat.clone(),
                 expected: (expected, cat.rvalue),
-                got: tags.len(),
+                selected: tags.len(),
             }),
             expected @ AtMost if tags.len() > cat.rvalue => Err(RequirementMismatch {
                 category: cat.clone(),
                 expected: (expected, cat.rvalue),
-                got: tags.len(),
+                selected: tags.len(),
             }),
             expected @ AtLeast if tags.len() < (cat.rvalue) => Err(RequirementMismatch {
                 category: cat.clone(),
                 expected: (expected, cat.rvalue),
-                got: tags.len(),
+                selected: tags.len(),
             }),
             _ => {
                 if tags.is_empty() {
