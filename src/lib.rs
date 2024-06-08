@@ -3,6 +3,7 @@ pub mod error;
 pub mod filename;
 pub mod fs_util;
 pub mod schema;
+pub mod util;
 
 use app::App;
 use clap::Parser;

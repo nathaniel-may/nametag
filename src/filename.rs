@@ -88,7 +88,9 @@ pub fn selection_to_filename(
     }
 
     // remove the last delimeter added
-    name.pop();
+    for _ in schema.delim.chars() {
+        name.pop();
+    }
     Ok(name)
 }
 

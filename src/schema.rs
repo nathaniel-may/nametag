@@ -1,12 +1,6 @@
-use crate::app::{to_empty_state, State, UiCategory};
+use crate::app::{State, UiCategory};
 use crate::error::{Error::ConfigParse, Result};
-use nom::branch::alt;
-use nom::bytes::complete::tag;
-use nom::bytes::streaming::take_until;
-use nom::combinator::{eof, fail};
-use nom::error::ParseError;
-use nom::multi::many0;
-use nom::sequence::terminated;
+use crate::util::NametagIterExt;
 #[cfg(test)]
 use quickcheck::Arbitrary;
 use serde::Deserialize;
@@ -16,7 +10,9 @@ use std::result::Result as StdResult;
 use Requirement::*;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum FilenameParseError {}
+pub enum FilenameParseError {
+    UnexpectedTag(String),
+}
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize)]
 pub struct Schema {
@@ -26,36 +22,18 @@ pub struct Schema {
 
 impl Schema {
     fn parse(&self, input: &str) -> StdResult<State, FilenameParseError> {
-        fn to_alt<'a, E>(
-            tags: &'a [String],
-        ) -> impl Fn(&'a str) -> nom::IResult<&'a str, &'a str, E>
-        where
-            E: ParseError<&'a str>,
-        {
-            move |i: &'a str| match tags {
-                [] => fail(i),
-                [h, t @ ..] => alt((tag(h.as_str()), to_alt(t)))(i),
-            }
-        }
-
-        let (input, salt) = take_until(self.delim.as_str())(input).unwrap();
-        let salt = salt.to_string();
-        let mut input = input;
-
+        let mut tags = input.split(&self.delim);
+        // todo actually parse valid salts.
+        let salt = tags.next().unwrap();
         let mut categories = Vec::with_capacity(self.categories.len());
-
-        for cat in self.categories {
-            let tag_parser = to_alt(&cat.values);
-            let (i, tags) =
-                many0(terminated(tag_parser, alt((tag(self.delim.as_str()), eof))))(input).unwrap();
-
-            // update input
-            input = i;
+        for cat in &self.categories[..] {
+            let applied_tags = tags.drain_while(|tag| cat.values.contains(&tag.to_string()));
 
             let values = cat
                 .values
+                .clone()
                 .into_iter()
-                .map(|name| (name, tags.contains(&&name.as_str())))
+                .map(|name| (name.clone(), applied_tags.contains(&name.as_str())))
                 .collect();
 
             categories.push(UiCategory {
@@ -64,8 +42,16 @@ impl Schema {
             });
         }
 
-        let state = State { salt, categories };
-        Ok(state)
+        match &tags.collect::<Vec<_>>()[..] {
+            [] => {
+                let state = State {
+                    salt: salt.to_string(),
+                    categories,
+                };
+                Ok(state)
+            }
+            [h, ..] => Err(FilenameParseError::UnexpectedTag(h.to_string())),
+        }
     }
 }
 
@@ -206,6 +192,11 @@ fn init_config_file_parses() {
     }
 }
 
+#[test]
+fn disallow_empty_tags() {
+    unimplemented!()
+}
+
 #[cfg(test)]
 mod prop_tests {
     use crate::app::to_empty_state;
@@ -241,7 +232,17 @@ mod prop_tests {
                 Err(_) => false,
                 Ok(filename) => match schema.parse(&filename) {
                     Err(_) => false,
-                    Ok(parsed_state) => parsed_state == state,
+                    Ok(parsed_state) => {
+                        // for debugging with --nocapture:
+                        if parsed_state != state {
+                            println!("schema:   {schema:?}");
+                            println!("filename: {filename}");
+                            println!("state:    {state:?}");
+                            println!("parsed:   {parsed_state:?}");
+                            println!("-----------------");
+                        }
+                        parsed_state == state
+                    }
                 },
             }
         }

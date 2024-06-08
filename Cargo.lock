@@ -2447,7 +2447,6 @@ dependencies = [
  "egui_extras",
  "env_logger 0.10.2",
  "image",
- "nom",
  "open",
  "quickcheck",
  "rand",
