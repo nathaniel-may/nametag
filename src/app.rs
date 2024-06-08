@@ -192,7 +192,7 @@ impl App {
         match filename::selection_to_filename(&self.schema, &self.ui_state) {
             Ok(name) => {
                 let id = self.file_id.clone();
-                let delim = self.schema.delim.clone();
+                let delim = self.schema.delim().to_string();
                 let ext = match self.active_file().extension() {
                     Some(ext) => format!(".{}", ext.to_string_lossy()),
                     None => String::new(),
@@ -277,12 +277,11 @@ pub fn to_empty_state(schema: &Schema, rng: &mut ChaCha8Rng) -> State {
     State {
         salt: gen_salt(rng),
         categories: schema
-            .categories
-            .clone()
-            .into_iter()
+            .categories()
+            .iter()
             .map(|cat| UiCategory {
                 name: cat.name.clone(),
-                values: cat.values.into_iter().map(|k| (k, false)).collect(),
+                values: cat.values.clone().into_iter().map(|k| (k, false)).collect(),
             })
             .collect(),
     }

@@ -43,10 +43,10 @@ pub fn selection_to_filename(
     state: &State,
 ) -> Result<String, GenerateFilenameError> {
     let mut name = state.salt.clone();
-    name.push_str(&schema.delim);
+    name.push_str(schema.delim());
     for cat in &state.categories[..] {
         let cat_def = schema
-            .categories
+            .categories()
             .iter()
             .find(|s_cat| s_cat.name == cat.name)
             // since States are generated from Schemas, this should be safe
@@ -76,11 +76,11 @@ pub fn selection_to_filename(
             }),
             _ => {
                 if tags.is_empty() {
-                    name.push_str(&schema.delim)
+                    name.push_str(schema.delim())
                 }
-                for id in tags {
-                    name.push_str(&id);
-                    name.push_str(&schema.delim)
+                for tag in tags {
+                    name.push_str(&tag);
+                    name.push_str(schema.delim())
                 }
                 Ok(())
             }
@@ -88,7 +88,7 @@ pub fn selection_to_filename(
     }
 
     // remove the last delimeter added
-    for _ in schema.delim.chars() {
+    for _ in schema.delim().chars() {
         name.pop();
     }
     Ok(name)

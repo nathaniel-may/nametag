@@ -16,6 +16,9 @@ pub enum Error {
     FailedToReadContents(io::Error),
     LoggerFailed(SetGlobalDefaultError),
     PathErr(io::Error),
+    // TODO separate error type for config checking?
+    EmptyStringNotValidTag,
+    CategoryWithNoTags { category_name: String },
 }
 
 impl fmt::Display for Error {
@@ -34,6 +37,13 @@ impl fmt::Display for Error {
             LoggerFailed(e) => write!(f, "Failed to set up logger: {e}"),
             FailedToReadContents(e) => write!(f, "Failed read file contents: {e}"),
             PathErr(e) => write!(f, "Issue with path: {e}"),
+            EmptyStringNotValidTag => write!(
+                f,
+                "Schema cannot be configured with a tag that has no characters."
+            ),
+            CategoryWithNoTags { category_name } => {
+                write!(f, "Category {category_name} has no tags.")
+            }
         }
     }
 }
@@ -41,7 +51,7 @@ impl fmt::Display for Error {
 impl StdError for Error {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
-            EmptyWorkingDir => None,
+            EmptyWorkingDir | EmptyStringNotValidTag | CategoryWithNoTags { .. } => None,
 
             ConfigParse(e) => Some(e),
             Eframe(e) => Some(e),

@@ -1,4 +1,5 @@
 use crate::app::{State, UiCategory};
+use crate::error::Error;
 use crate::error::{Error::ConfigParse, Result};
 use crate::util::NametagIterExt;
 #[cfg(test)]
@@ -16,12 +17,39 @@ pub enum FilenameParseError {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize)]
 pub struct Schema {
-    pub delim: String,
-    pub categories: Vec<Category>,
+    delim: String,
+    categories: Vec<Category>,
 }
 
 impl Schema {
-    fn parse(&self, input: &str) -> StdResult<State, FilenameParseError> {
+    // This requires me the dev to remember to check this properly.
+    // The RIGHT way to do this would be to use one set of types for deserializing
+    // from input strings, and another for internal state. The only way to create
+    // valid internal state would be to go through this check proces. TODO
+    pub fn check(&self) -> Result<()> {
+        for cat in &self.categories {
+            if cat.values.is_empty() {
+                return Err(Error::CategoryWithNoTags {
+                    category_name: cat.name.clone(),
+                });
+            }
+            if cat.values.contains(&String::new()) {
+                return Err(Error::EmptyStringNotValidTag);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn delim(&self) -> &str {
+        self.delim.as_str()
+    }
+
+    pub fn categories(&self) -> &[Category] {
+        &self.categories
+    }
+
+    pub fn parse(&self, input: &str) -> StdResult<State, FilenameParseError> {
         let mut tags = input.split(&self.delim);
         // todo actually parse valid salts.
         let salt = tags.next().unwrap();
@@ -146,9 +174,11 @@ impl fmt::Display for Requirement {
 }
 
 pub fn parse_schema(contents: &str) -> Result<Schema> {
-    serde_dhall::from_str(contents)
+    let schema: Schema = serde_dhall::from_str(contents)
         .parse()
-        .map_err(|e| ConfigParse(Box::new(e)))
+        .map_err(|e| ConfigParse(Box::new(e)))?;
+    schema.check()?;
+    Ok(schema)
 }
 
 #[test]
@@ -194,7 +224,32 @@ fn init_config_file_parses() {
 
 #[test]
 fn disallow_empty_tags() {
-    unimplemented!()
+    let schema = Schema {
+        delim: "-".to_string(),
+        categories: vec![Category {
+            name: "Animals".to_string(),
+            rtype: AtMost,
+            rvalue: 2,
+            values: vec![],
+        }],
+    };
+
+    assert!(schema.check().is_err())
+}
+
+#[test]
+fn disallow_empty_string_tag() {
+    let schema = Schema {
+        delim: "-".to_string(),
+        categories: vec![Category {
+            name: "Animals".to_string(),
+            rtype: AtMost,
+            rvalue: 2,
+            values: vec!["cat".to_string(), "dog".to_string(), "".to_string()],
+        }],
+    };
+
+    assert!(schema.check().is_err())
 }
 
 #[cfg(test)]
@@ -202,7 +257,7 @@ mod prop_tests {
     use crate::app::to_empty_state;
 
     use super::Schema;
-    use quickcheck::{Gen, QuickCheck};
+    use quickcheck::{Gen, QuickCheck, TestResult};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
@@ -210,7 +265,11 @@ mod prop_tests {
     // TODO this does not include the salt and it should
     #[test]
     fn parse_generated_schemas() {
-        fn closed_loop(schema: Schema, selection: u32, seed: u64) -> bool {
+        fn closed_loop(schema: Schema, selection: u32, seed: u64) -> TestResult {
+            if schema.check().is_err() {
+                return TestResult::discard();
+            }
+
             // quickcheck doesn't have a great way to generate bool values larger than the gen size
             // so I'm using this u32 like each bit is an arbitrary bool.
             let mut bool_selection = Vec::with_capacity(32);
@@ -229,9 +288,10 @@ mod prop_tests {
             }
 
             match crate::filename::selection_to_filename(&schema, &state) {
-                Err(_) => false,
+                // The random state doesn't add up to a valid filename given the category restrictions
+                Err(_) => TestResult::discard(),
                 Ok(filename) => match schema.parse(&filename) {
-                    Err(_) => false,
+                    Err(_) => TestResult::failed(),
                     Ok(parsed_state) => {
                         // for debugging with --nocapture:
                         if parsed_state != state {
@@ -241,7 +301,7 @@ mod prop_tests {
                             println!("parsed:   {parsed_state:?}");
                             println!("-----------------");
                         }
-                        parsed_state == state
+                        TestResult::from_bool(parsed_state == state)
                     }
                 },
             }
@@ -249,6 +309,6 @@ mod prop_tests {
 
         QuickCheck::new()
             .gen(Gen::new(5))
-            .quickcheck(closed_loop as fn(Schema, u32, u64) -> bool);
+            .quickcheck(closed_loop as fn(Schema, u32, u64) -> TestResult);
     }
 }
