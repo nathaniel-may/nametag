@@ -45,6 +45,11 @@ impl Schema {
         if self.delim.is_empty() {
             return Err(Error::EmptyDelimiter);
         }
+        for c in self.delim.chars() {
+            if !Schema::char_allowed(c) {
+                return Err(Error::InvalidCharacterInDelim(c));
+            }
+        }
 
         let mut m: HashSet<&str> = HashSet::new();
 
@@ -63,6 +68,12 @@ impl Schema {
                     return Err(Error::TagsMustBeUnique {
                         category_name: cat.name.clone(),
                         duplicated_tag: v.clone(),
+                    });
+                }
+                if v.contains(&self.delim) {
+                    return Err(Error::DelimiterFoundInTag {
+                        category_name: cat.name.clone(),
+                        tag: v.clone(),
                     });
                 }
                 for c in v.chars() {
@@ -318,11 +329,42 @@ mod unit_tests {
     }
 
     #[test]
+    fn disallow_null_tag() {
+        match schema_with_tag("\0").check() {
+            Err(Error::InvalidCharacterInTag(c)) => assert_eq!(c, '\0'),
+            Err(e) => panic!("{e:?}"),
+            Ok(x) => panic!("{x:?}"),
+        }
+    }
+
+    #[test]
     fn disallow_empty_string_delim() {
         let mut schema = schema_with_tag("cat");
         schema.delim = "".into();
         match schema.check() {
             Err(Error::EmptyDelimiter) => (),
+            Err(e) => panic!("{e:?}"),
+            Ok(x) => panic!("{x:?}"),
+        }
+    }
+
+    #[test]
+    fn disallow_null_delim() {
+        let mut schema = schema_with_tag("cat");
+        schema.delim = "\0".into();
+        match schema.check() {
+            Err(Error::InvalidCharacterInDelim(c)) => assert_eq!(c, '\0'),
+            Err(e) => panic!("{e:?}"),
+            Ok(x) => panic!("{x:?}"),
+        }
+    }
+
+    #[test]
+    fn no_tags_can_contain_delimiter() {
+        let mut schema = schema_with_tag("super-cat");
+        schema.delim = "-".into();
+        match schema.check() {
+            Err(Error::DelimiterFoundInTag { tag, .. }) => assert_eq!(tag, "super-cat"),
             Err(e) => panic!("{e:?}"),
             Ok(x) => panic!("{x:?}"),
         }
@@ -409,10 +451,7 @@ mod prop_tests {
                 // The random state doesn't add up to a valid filename given the category restrictions
                 Err(_) => TestResult::discard(),
                 Ok(filename) => match schema.parse(&filename) {
-                    Err(e) => {
-                        println!("{e}");
-                        TestResult::failed()
-                    }
+                    Err(_) => TestResult::failed(),
                     Ok(parsed_state) => {
                         // for debugging with --nocapture:
                         if parsed_state != state {
