@@ -81,7 +81,7 @@ impl Schema {
     }
 
     pub fn parse(&self, input: &str) -> StdResult<State, FilenameParseError> {
-        let mut tags = input.split(&self.delim);
+        let mut tags = input.split(&self.delim).peekable();
         // todo actually parse valid salts.
         let salt = tags.next().unwrap();
         let mut categories = Vec::with_capacity(self.categories.len());
@@ -222,8 +222,12 @@ pub fn parse_schema(contents: &str) -> Result<Schema> {
 #[cfg(test)]
 mod unit_tests {
     use super::{Category, Requirement::*};
+    use crate::app::to_empty_state;
     use crate::error::Error;
+    use crate::filename::selection_to_filename;
     use crate::schema::{parse_schema, Schema};
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
 
     fn schema_with_tag(tag: &str) -> Schema {
         let categories = vec![Category {
@@ -330,6 +334,25 @@ mod unit_tests {
             Err(e) => panic!("{e:?}"),
             Ok(x) => panic!("{x:?}"),
         }
+    }
+
+    #[test]
+    fn basic_parse_two_categories() {
+        let mut schema = schema_with_tag("cat");
+        schema.categories.push(Category {
+            name: "People".to_string(),
+            rtype: AtLeast,
+            rvalue: 0,
+            values: vec!["chris".to_string(), "nathan".to_string()],
+        });
+        let mut state = to_empty_state(&schema, &mut ChaCha8Rng::seed_from_u64(0));
+        state.categories[0].values[0] = ("cat".into(), true);
+        state.categories[1].values[0] = ("chris".into(), true);
+
+        let filename = selection_to_filename(&schema, &state).unwrap();
+        assert_eq!(filename, "ZQYC5T-cat-chris");
+        let parsed_state = schema.parse(&filename).unwrap();
+        assert_eq!(state, parsed_state)
     }
 }
 
