@@ -42,6 +42,10 @@ impl Schema {
     // from input strings, and another for internal state. The only way to create
     // valid internal state would be to go through this check proces. TODO
     pub fn check(&self) -> Result<()> {
+        if self.delim.is_empty() {
+            return Err(Error::EmptyDelimiter);
+        }
+
         let mut m: HashSet<&str> = HashSet::new();
 
         for cat in &self.categories {
@@ -308,6 +312,17 @@ mod unit_tests {
     fn disallow_empty_string_tag() {
         match schema_with_tag("").check() {
             Err(Error::EmptyStringNotValidTag) => (),
+            Err(e) => panic!("{e:?}"),
+            Ok(x) => panic!("{x:?}"),
+        }
+    }
+
+    #[test]
+    fn disallow_empty_string_delim() {
+        let mut schema = schema_with_tag("cat");
+        schema.delim = "".into();
+        match schema.check() {
+            Err(Error::EmptyDelimiter) => (),
             Err(e) => panic!("{e:?}"),
             Ok(x) => panic!("{x:?}"),
         }
