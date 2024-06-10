@@ -5,14 +5,24 @@ use crate::util::NametagIterExt;
 #[cfg(test)]
 use quickcheck::Arbitrary;
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::fmt;
 use std::result::Result as StdResult;
+use FilenameParseError::*;
 #[cfg(test)]
 use Requirement::*;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FilenameParseError {
     UnexpectedTag(String),
+}
+
+impl fmt::Display for FilenameParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UnexpectedTag(tag) => write!(f, "Unexpected tag: {tag}"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize)]
@@ -27,6 +37,8 @@ impl Schema {
     // from input strings, and another for internal state. The only way to create
     // valid internal state would be to go through this check proces. TODO
     pub fn check(&self) -> Result<()> {
+        let mut m: HashSet<&str> = HashSet::new();
+
         for cat in &self.categories {
             if cat.values.is_empty() {
                 return Err(Error::CategoryWithNoTags {
@@ -35,6 +47,15 @@ impl Schema {
             }
             if cat.values.contains(&String::new()) {
                 return Err(Error::EmptyStringNotValidTag);
+            }
+
+            for v in &cat.values {
+                if !m.insert(v) {
+                    return Err(Error::TagsMustBeUnique {
+                        category_name: cat.name.clone(),
+                        duplicated_tag: v.clone(),
+                    });
+                }
             }
         }
 
@@ -98,17 +119,24 @@ impl Arbitrary for Schema {
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        Box::new(
-            self.categories
-                .shrink()
-                .map(|categories| Schema {
-                    // two char delims will cause different problems than single char delims. don't shrink.
-                    delim: self.delim.clone(),
-                    categories,
-                })
-                .collect::<Vec<_>>()
-                .into_iter(),
-        )
+        let cats = self
+            .categories
+            .shrink()
+            .map(|categories| Schema {
+                delim: self.delim.clone(),
+                categories,
+            })
+            .collect::<Vec<_>>();
+
+        let delims = self.delim.shrink().map(|delim| Schema {
+            delim,
+            categories: self.categories.clone(),
+        });
+
+        let mut all = cats;
+        all.extend(delims);
+
+        Box::new(all.into_iter())
     }
 }
 
@@ -234,7 +262,11 @@ fn disallow_empty_tags() {
         }],
     };
 
-    assert!(schema.check().is_err())
+    match schema.check() {
+        Err(Error::CategoryWithNoTags { category_name }) => assert_eq!(category_name, "Animals"),
+        Err(e) => panic!("{e:?}"),
+        Ok(x) => panic!("{x:?}"),
+    }
 }
 
 #[test]
@@ -249,7 +281,44 @@ fn disallow_empty_string_tag() {
         }],
     };
 
-    assert!(schema.check().is_err())
+    match schema.check() {
+        Err(Error::EmptyStringNotValidTag) => (),
+        Err(e) => panic!("{e:?}"),
+        Ok(x) => panic!("{x:?}"),
+    }
+}
+
+#[test]
+fn all_tags_must_be_unique() {
+    let schema = Schema {
+        delim: "-".to_string(),
+        categories: vec![
+            Category {
+                name: "Animals".to_string(),
+                rtype: AtLeast,
+                rvalue: 0,
+                values: vec!["cat".to_string(), "dog".to_string()],
+            },
+            Category {
+                name: "People".to_string(),
+                rtype: AtLeast,
+                rvalue: 0,
+                values: vec!["chris".to_string(), "cat".to_string(), "nathan".to_string()],
+            },
+        ],
+    };
+
+    match schema.check() {
+        Err(Error::TagsMustBeUnique {
+            category_name,
+            duplicated_tag,
+        }) => {
+            assert_eq!(category_name, "People");
+            assert_eq!(duplicated_tag, "cat");
+        }
+        Err(e) => panic!("{e:?}"),
+        Ok(x) => panic!("{x:?}"),
+    }
 }
 
 #[cfg(test)]
@@ -291,7 +360,10 @@ mod prop_tests {
                 // The random state doesn't add up to a valid filename given the category restrictions
                 Err(_) => TestResult::discard(),
                 Ok(filename) => match schema.parse(&filename) {
-                    Err(_) => TestResult::failed(),
+                    Err(e) => {
+                        println!("{e}");
+                        TestResult::failed()
+                    }
                     Ok(parsed_state) => {
                         // for debugging with --nocapture:
                         if parsed_state != state {

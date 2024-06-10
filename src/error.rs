@@ -18,7 +18,13 @@ pub enum Error {
     PathErr(io::Error),
     // TODO separate error type for config checking?
     EmptyStringNotValidTag,
-    CategoryWithNoTags { category_name: String },
+    CategoryWithNoTags {
+        category_name: String,
+    },
+    TagsMustBeUnique {
+        category_name: String,
+        duplicated_tag: String,
+    },
 }
 
 impl fmt::Display for Error {
@@ -44,6 +50,7 @@ impl fmt::Display for Error {
             CategoryWithNoTags { category_name } => {
                 write!(f, "Category {category_name} has no tags.")
             }
+            TagsMustBeUnique { category_name, duplicated_tag } => write!(f, "The tag \"{duplicated_tag}\" in category {category_name} has already been used in a prior category."),
         }
     }
 }
@@ -51,7 +58,10 @@ impl fmt::Display for Error {
 impl StdError for Error {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
-            EmptyWorkingDir | EmptyStringNotValidTag | CategoryWithNoTags { .. } => None,
+            EmptyWorkingDir
+            | EmptyStringNotValidTag
+            | CategoryWithNoTags { .. }
+            | TagsMustBeUnique { .. } => None,
 
             ConfigParse(e) => Some(e),
             Eframe(e) => Some(e),
