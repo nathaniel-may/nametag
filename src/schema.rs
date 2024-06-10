@@ -32,6 +32,11 @@ pub struct Schema {
 }
 
 impl Schema {
+    fn char_allowed(c: char) -> bool {
+        // no control characters. They can't all be read back after being written.
+        (c as u32) >= 32 && !['\0'].contains(&c)
+    }
+
     // This requires me the dev to remember to check this properly.
     // The RIGHT way to do this would be to use one set of types for deserializing
     // from input strings, and another for internal state. The only way to create
@@ -55,6 +60,11 @@ impl Schema {
                         category_name: cat.name.clone(),
                         duplicated_tag: v.clone(),
                     });
+                }
+                for c in v.chars() {
+                    if !Schema::char_allowed(c) {
+                        return Err(Error::InvalidCharacterInTag(c));
+                    }
                 }
             }
         }
@@ -209,123 +219,124 @@ pub fn parse_schema(contents: &str) -> Result<Schema> {
     Ok(schema)
 }
 
-#[test]
-fn init_config_file_parses() {
-    use std::fs;
-    use std::path::Path;
+#[cfg(test)]
+mod unit_tests {
+    use super::{Category, Requirement::*};
+    use crate::error::Error;
+    use crate::schema::{parse_schema, Schema};
 
-    use crate::schema::Category;
-    use crate::schema::Requirement::*;
-
-    let expected = Schema {
-        delim: "-".to_string(),
-        categories: vec![
-            Category {
-                name: "Medium".to_string(),
-                rtype: Exactly,
-                rvalue: 1,
-                values: vec![
-                    "art".to_string(),
-                    "photo".to_string(),
-                    "ai".to_string(),
-                    "other".to_string(),
-                ],
-            },
-            Category {
-                name: "Subject".to_string(),
-                rtype: AtLeast,
-                rvalue: 0,
-                values: vec![
-                    "plants".to_string(),
-                    "animals".to_string(),
-                    "people".to_string(),
-                ],
-            },
-        ],
-    };
-
-    match parse_schema(&fs::read_to_string(Path::new("./src/init.dhall")).unwrap()) {
-        Err(e) => panic!("{e}"),
-        Ok(schema) => assert_eq!(expected, schema),
-    }
-}
-
-#[test]
-fn disallow_empty_tags() {
-    let schema = Schema {
-        delim: "-".to_string(),
-        categories: vec![Category {
+    fn schema_with_tag(tag: &str) -> Schema {
+        let categories = vec![Category {
             name: "Animals".to_string(),
-            rtype: AtMost,
-            rvalue: 2,
-            values: vec![],
-        }],
-    };
-
-    match schema.check() {
-        Err(Error::CategoryWithNoTags { category_name }) => assert_eq!(category_name, "Animals"),
-        Err(e) => panic!("{e:?}"),
-        Ok(x) => panic!("{x:?}"),
-    }
-}
-
-#[test]
-fn disallow_empty_string_tag() {
-    let schema = Schema {
-        delim: "-".to_string(),
-        categories: vec![Category {
-            name: "Animals".to_string(),
-            rtype: AtMost,
-            rvalue: 2,
-            values: vec!["cat".to_string(), "dog".to_string(), "".to_string()],
-        }],
-    };
-
-    match schema.check() {
-        Err(Error::EmptyStringNotValidTag) => (),
-        Err(e) => panic!("{e:?}"),
-        Ok(x) => panic!("{x:?}"),
-    }
-}
-
-#[test]
-fn all_tags_must_be_unique() {
-    let schema = Schema {
-        delim: "-".to_string(),
-        categories: vec![
-            Category {
-                name: "Animals".to_string(),
-                rtype: AtLeast,
-                rvalue: 0,
-                values: vec!["cat".to_string(), "dog".to_string()],
-            },
-            Category {
-                name: "People".to_string(),
-                rtype: AtLeast,
-                rvalue: 0,
-                values: vec!["chris".to_string(), "cat".to_string(), "nathan".to_string()],
-            },
-        ],
-    };
-
-    match schema.check() {
-        Err(Error::TagsMustBeUnique {
-            category_name,
-            duplicated_tag,
-        }) => {
-            assert_eq!(category_name, "People");
-            assert_eq!(duplicated_tag, "cat");
+            rtype: AtLeast,
+            rvalue: 0,
+            values: vec![tag.to_string()],
+        }];
+        Schema {
+            delim: "-".to_string(),
+            categories,
         }
-        Err(e) => panic!("{e:?}"),
-        Ok(x) => panic!("{x:?}"),
+    }
+
+    #[test]
+    fn init_config_file_parses() {
+        use std::fs;
+        use std::path::Path;
+
+        use crate::schema::Category;
+        use crate::schema::Requirement::*;
+
+        let expected = Schema {
+            delim: "-".to_string(),
+            categories: vec![
+                Category {
+                    name: "Medium".to_string(),
+                    rtype: Exactly,
+                    rvalue: 1,
+                    values: vec![
+                        "art".to_string(),
+                        "photo".to_string(),
+                        "ai".to_string(),
+                        "other".to_string(),
+                    ],
+                },
+                Category {
+                    name: "Subject".to_string(),
+                    rtype: AtLeast,
+                    rvalue: 0,
+                    values: vec![
+                        "plants".to_string(),
+                        "animals".to_string(),
+                        "people".to_string(),
+                    ],
+                },
+            ],
+        };
+
+        match parse_schema(&fs::read_to_string(Path::new("./src/init.dhall")).unwrap()) {
+            Err(e) => panic!("{e}"),
+            Ok(schema) => assert_eq!(expected, schema),
+        }
+    }
+
+    #[test]
+    fn disallow_empty_tags() {
+        let schema = Schema {
+            delim: "-".to_string(),
+            categories: vec![Category {
+                name: "Animals".to_string(),
+                rtype: AtMost,
+                rvalue: 2,
+                values: vec![],
+            }],
+        };
+
+        match schema.check() {
+            Err(Error::CategoryWithNoTags { category_name }) => {
+                assert_eq!(category_name, "Animals")
+            }
+            Err(e) => panic!("{e:?}"),
+            Ok(x) => panic!("{x:?}"),
+        }
+    }
+
+    #[test]
+    fn disallow_empty_string_tag() {
+        match schema_with_tag("").check() {
+            Err(Error::EmptyStringNotValidTag) => (),
+            Err(e) => panic!("{e:?}"),
+            Ok(x) => panic!("{x:?}"),
+        }
+    }
+
+    #[test]
+    fn all_tags_must_be_unique() {
+        let mut schema = schema_with_tag("cat");
+        schema.categories.push(Category {
+            name: "People".to_string(),
+            rtype: AtLeast,
+            rvalue: 0,
+            values: vec!["chris".to_string(), "cat".to_string(), "nathan".to_string()],
+        });
+
+        match schema.check() {
+            Err(Error::TagsMustBeUnique {
+                category_name,
+                duplicated_tag,
+            }) => {
+                assert_eq!(category_name, "People");
+                assert_eq!(duplicated_tag, "cat");
+            }
+            Err(e) => panic!("{e:?}"),
+            Ok(x) => panic!("{x:?}"),
+        }
     }
 }
 
 #[cfg(test)]
 mod prop_tests {
-    use crate::app::to_empty_state;
-
     use super::Schema;
+    use crate::{app::to_empty_state, filename::selection_to_filename};
     use quickcheck::{Gen, QuickCheck, TestResult};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
@@ -356,7 +367,7 @@ mod prop_tests {
                 cat.values = tags.zip(selection.drain(0..size)).collect();
             }
 
-            match crate::filename::selection_to_filename(&schema, &state) {
+            match selection_to_filename(&schema, &state) {
                 // The random state doesn't add up to a valid filename given the category restrictions
                 Err(_) => TestResult::discard(),
                 Ok(filename) => match schema.parse(&filename) {

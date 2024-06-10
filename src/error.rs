@@ -18,6 +18,7 @@ pub enum Error {
     PathErr(io::Error),
     // TODO separate error type for config checking?
     EmptyStringNotValidTag,
+    InvalidCharacterInTag(char),
     CategoryWithNoTags {
         category_name: String,
     },
@@ -51,6 +52,7 @@ impl fmt::Display for Error {
                 write!(f, "Category {category_name} has no tags.")
             }
             TagsMustBeUnique { category_name, duplicated_tag } => write!(f, "The tag \"{duplicated_tag}\" in category {category_name} has already been used in a prior category."),
+            InvalidCharacterInTag(c) => write!(f, "Tags cannot contain the character {c}"),
         }
     }
 }
@@ -61,7 +63,8 @@ impl StdError for Error {
             EmptyWorkingDir
             | EmptyStringNotValidTag
             | CategoryWithNoTags { .. }
-            | TagsMustBeUnique { .. } => None,
+            | TagsMustBeUnique { .. }
+            | InvalidCharacterInTag(_) => None,
 
             ConfigParse(e) => Some(e),
             Eframe(e) => Some(e),
