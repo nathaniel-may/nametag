@@ -48,7 +48,7 @@ pub fn selection_to_filename(
         let cat_def = schema
             .categories()
             .iter()
-            .find(|s_cat| s_cat.name == cat.name)
+            .find(|s_cat| s_cat.name() == cat.name)
             // since States are generated from Schemas, this should be safe
             .unwrap();
 
@@ -58,20 +58,20 @@ pub fn selection_to_filename(
             .filter_map(|(tag, tf)| if *tf { Some(tag.clone()) } else { None })
             .collect();
 
-        match cat_def.rtype {
-            expected @ Exactly if tags.len() != cat_def.rvalue => Err(RequirementMismatch {
+        match cat_def.req() {
+            expected @ Exactly(n) if tags.len() != n => Err(RequirementMismatch {
                 category_name: cat.name.clone(),
-                expected: (expected, cat_def.rvalue),
+                expected: (expected, n),
                 selected: tags.len(),
             }),
-            expected @ AtMost if tags.len() > cat_def.rvalue => Err(RequirementMismatch {
+            expected @ AtMost(n) if tags.len() > n => Err(RequirementMismatch {
                 category_name: cat.name.clone(),
-                expected: (expected, cat_def.rvalue),
+                expected: (expected, n),
                 selected: tags.len(),
             }),
-            expected @ AtLeast if tags.len() < (cat_def.rvalue) => Err(RequirementMismatch {
+            expected @ AtLeast(n) if tags.len() < n => Err(RequirementMismatch {
                 category_name: cat.name.clone(),
-                expected: (expected, cat_def.rvalue),
+                expected: (expected, n),
                 selected: tags.len(),
             }),
             _ => {

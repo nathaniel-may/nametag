@@ -1,10 +1,10 @@
 use crate::app::{State, UiCategory};
+use crate::config;
 use crate::error::Error;
-use crate::error::{Error::ConfigParse, Result};
+use crate::error::Result;
 use crate::util::NametagIterExt;
 #[cfg(test)]
 use quickcheck::Arbitrary;
-use serde::Deserialize;
 use std::collections::HashSet;
 use std::fmt;
 use std::result::Result as StdResult;
@@ -25,7 +25,7 @@ impl fmt::Display for FilenameParseError {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Schema {
     delim: String,
     categories: Vec<Category>,
@@ -37,15 +37,12 @@ impl Schema {
         (c as u32) >= 32 && !['\0'].contains(&c)
     }
 
-    // This requires me the dev to remember to check this properly.
-    // The RIGHT way to do this would be to use one set of types for deserializing
-    // from input strings, and another for internal state. The only way to create
-    // valid internal state would be to go through this check proces. TODO
-    pub fn check(&self) -> Result<()> {
-        if self.delim.is_empty() {
+    // This is the only way to go from the input type config::Schema to the internal state of schema::Schema.
+    pub fn from_config(config: config::Schema) -> Result<Schema> {
+        if config.delim.is_empty() {
             return Err(Error::EmptyDelimiter);
         }
-        for c in self.delim.chars() {
+        for c in config.delim.chars() {
             if !Schema::char_allowed(c) {
                 return Err(Error::InvalidCharacterInDelim(c));
             }
@@ -53,7 +50,7 @@ impl Schema {
 
         let mut m: HashSet<&str> = HashSet::new();
 
-        for cat in &self.categories {
+        for cat in &config.categories {
             if cat.values.is_empty() {
                 return Err(Error::CategoryWithNoTags {
                     category_name: cat.name.clone(),
@@ -70,7 +67,7 @@ impl Schema {
                         duplicated_tag: v.clone(),
                     });
                 }
-                if v.contains(&self.delim) {
+                if v.contains(&config.delim) {
                     return Err(Error::DelimiterFoundInTag {
                         category_name: cat.name.clone(),
                         tag: v.clone(),
@@ -84,7 +81,20 @@ impl Schema {
             }
         }
 
-        Ok(())
+        let mut categories = Vec::with_capacity(config.categories.len());
+        for cat in config.categories {
+            let cat = Category {
+                name: cat.name,
+                req: (cat.rtype, cat.rvalue).into(),
+                values: cat.values,
+            };
+            categories.push(cat);
+        }
+        let schema = Schema {
+            delim: config.delim,
+            categories,
+        };
+        Ok(schema)
     }
 
     pub fn delim(&self) -> &str {
@@ -165,12 +175,25 @@ impl Arbitrary for Schema {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Category {
-    pub name: String,
-    pub rtype: Requirement,
-    pub rvalue: usize,
-    pub values: Vec<String>,
+    name: String,
+    req: Requirement,
+    values: Vec<String>,
+}
+
+impl Category {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn req(&self) -> Requirement {
+        self.req
+    }
+
+    pub fn values(&self) -> &[String] {
+        &self.values
+    }
 }
 
 #[cfg(test)]
@@ -178,8 +201,7 @@ impl Arbitrary for Category {
     fn arbitrary(g: &mut quickcheck::Gen) -> Self {
         Category {
             name: Arbitrary::arbitrary(g),
-            rtype: Arbitrary::arbitrary(g),
-            rvalue: *g.choose(&[0, 1, 2, 3]).unwrap(),
+            req: Arbitrary::arbitrary(g),
             values: Arbitrary::arbitrary(g),
         }
     }
@@ -190,8 +212,7 @@ impl Arbitrary for Category {
                 .shrink()
                 .map(|values| Category {
                     name: self.name.shrink().next().unwrap_or(self.name.clone()),
-                    rtype: self.rtype,
-                    rvalue: if self.rvalue == 0 { 0 } else { self.rvalue - 1 },
+                    req: self.req.shrink().next().unwrap_or(self.req),
                     values,
                 })
                 .collect::<Vec<_>>()
@@ -200,58 +221,67 @@ impl Arbitrary for Category {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Requirement {
-    Exactly,
-    AtLeast,
-    AtMost,
+    Exactly(usize),
+    AtLeast(usize),
+    AtMost(usize),
+}
+
+impl From<(config::Requirement, usize)> for Requirement {
+    fn from(value: (config::Requirement, usize)) -> Self {
+        match value.0 {
+            config::Requirement::AtLeast => Requirement::AtLeast(value.1),
+            config::Requirement::AtMost => Requirement::AtMost(value.1),
+            config::Requirement::Exactly => Requirement::Exactly(value.1),
+        }
+    }
 }
 
 #[cfg(test)]
 impl Arbitrary for Requirement {
     fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-        *g.choose(&[Exactly, AtLeast, AtMost]).unwrap()
+        let n = Arbitrary::arbitrary(g);
+        *g.choose(&[Exactly(n), AtLeast(n), AtMost(n)]).unwrap()
     }
 
-    // no way to shrink this value
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        match self {
+            AtLeast(n) => Box::new(n.shrink().map(AtLeast).collect::<Vec<_>>().into_iter()),
+            AtMost(n) => Box::new(n.shrink().map(AtMost).collect::<Vec<_>>().into_iter()),
+            Exactly(n) => Box::new(n.shrink().map(Exactly).collect::<Vec<_>>().into_iter()),
+        }
+    }
 }
 
 impl fmt::Display for Requirement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Exactly => write!(f, "exactly"),
-            Self::AtLeast => write!(f, "at least"),
-            Self::AtMost => write!(f, "at most"),
+            Self::Exactly(n) => write!(f, "exactly {n}"),
+            Self::AtLeast(n) => write!(f, "at least {n}"),
+            Self::AtMost(n) => write!(f, "at most {n}"),
         }
     }
 }
 
-pub fn parse_schema(contents: &str) -> Result<Schema> {
-    let schema: Schema = serde_dhall::from_str(contents)
-        .parse()
-        .map_err(|e| ConfigParse(Box::new(e)))?;
-    schema.check()?;
-    Ok(schema)
-}
-
 #[cfg(test)]
 mod unit_tests {
-    use super::{Category, Requirement::*};
     use crate::app::to_empty_state;
+    use crate::config::{self, parse_schema};
     use crate::error::Error;
     use crate::filename::selection_to_filename;
-    use crate::schema::{parse_schema, Schema};
+    use crate::schema::Schema;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    fn schema_with_tag(tag: &str) -> Schema {
-        let categories = vec![Category {
+    fn schema_with_tag(tag: &str) -> config::Schema {
+        let categories = vec![config::Category {
             name: "Animals".to_string(),
-            rtype: AtLeast,
+            rtype: config::Requirement::AtLeast,
             rvalue: 0,
             values: vec![tag.to_string()],
         }];
-        Schema {
+        config::Schema {
             delim: "-".to_string(),
             categories,
         }
@@ -262,15 +292,12 @@ mod unit_tests {
         use std::fs;
         use std::path::Path;
 
-        use crate::schema::Category;
-        use crate::schema::Requirement::*;
-
-        let expected = Schema {
+        let expected = config::Schema {
             delim: "-".to_string(),
             categories: vec![
-                Category {
+                config::Category {
                     name: "Medium".to_string(),
-                    rtype: Exactly,
+                    rtype: config::Requirement::Exactly,
                     rvalue: 1,
                     values: vec![
                         "art".to_string(),
@@ -279,9 +306,9 @@ mod unit_tests {
                         "other".to_string(),
                     ],
                 },
-                Category {
+                config::Category {
                     name: "Subject".to_string(),
-                    rtype: AtLeast,
+                    rtype: config::Requirement::AtLeast,
                     rvalue: 0,
                     values: vec![
                         "plants".to_string(),
@@ -300,17 +327,17 @@ mod unit_tests {
 
     #[test]
     fn disallow_empty_tags() {
-        let schema = Schema {
+        let schema = config::Schema {
             delim: "-".to_string(),
-            categories: vec![Category {
+            categories: vec![config::Category {
                 name: "Animals".to_string(),
-                rtype: AtMost,
+                rtype: config::Requirement::AtMost,
                 rvalue: 2,
                 values: vec![],
             }],
         };
 
-        match schema.check() {
+        match Schema::from_config(schema) {
             Err(Error::CategoryWithNoTags { category_name }) => {
                 assert_eq!(category_name, "Animals")
             }
@@ -321,7 +348,7 @@ mod unit_tests {
 
     #[test]
     fn disallow_empty_string_tag() {
-        match schema_with_tag("").check() {
+        match Schema::from_config(schema_with_tag("")) {
             Err(Error::EmptyStringNotValidTag) => (),
             Err(e) => panic!("{e:?}"),
             Ok(x) => panic!("{x:?}"),
@@ -330,7 +357,7 @@ mod unit_tests {
 
     #[test]
     fn disallow_null_tag() {
-        match schema_with_tag("\0").check() {
+        match Schema::from_config(schema_with_tag("\0")) {
             Err(Error::InvalidCharacterInTag(c)) => assert_eq!(c, '\0'),
             Err(e) => panic!("{e:?}"),
             Ok(x) => panic!("{x:?}"),
@@ -341,7 +368,7 @@ mod unit_tests {
     fn disallow_empty_string_delim() {
         let mut schema = schema_with_tag("cat");
         schema.delim = "".into();
-        match schema.check() {
+        match Schema::from_config(schema) {
             Err(Error::EmptyDelimiter) => (),
             Err(e) => panic!("{e:?}"),
             Ok(x) => panic!("{x:?}"),
@@ -352,7 +379,7 @@ mod unit_tests {
     fn disallow_null_delim() {
         let mut schema = schema_with_tag("cat");
         schema.delim = "\0".into();
-        match schema.check() {
+        match Schema::from_config(schema) {
             Err(Error::InvalidCharacterInDelim(c)) => assert_eq!(c, '\0'),
             Err(e) => panic!("{e:?}"),
             Ok(x) => panic!("{x:?}"),
@@ -363,7 +390,7 @@ mod unit_tests {
     fn no_tags_can_contain_delimiter() {
         let mut schema = schema_with_tag("super-cat");
         schema.delim = "-".into();
-        match schema.check() {
+        match Schema::from_config(schema) {
             Err(Error::DelimiterFoundInTag { tag, .. }) => assert_eq!(tag, "super-cat"),
             Err(e) => panic!("{e:?}"),
             Ok(x) => panic!("{x:?}"),
@@ -373,14 +400,14 @@ mod unit_tests {
     #[test]
     fn all_tags_must_be_unique() {
         let mut schema = schema_with_tag("cat");
-        schema.categories.push(Category {
+        schema.categories.push(config::Category {
             name: "People".to_string(),
-            rtype: AtLeast,
+            rtype: config::Requirement::AtLeast,
             rvalue: 0,
             values: vec!["chris".to_string(), "cat".to_string(), "nathan".to_string()],
         });
 
-        match schema.check() {
+        match Schema::from_config(schema) {
             Err(Error::TagsMustBeUnique {
                 category_name,
                 duplicated_tag,
@@ -396,12 +423,13 @@ mod unit_tests {
     #[test]
     fn basic_parse_two_categories() {
         let mut schema = schema_with_tag("cat");
-        schema.categories.push(Category {
+        schema.categories.push(config::Category {
             name: "People".to_string(),
-            rtype: AtLeast,
+            rtype: config::Requirement::AtLeast,
             rvalue: 0,
             values: vec!["chris".to_string(), "nathan".to_string()],
         });
+        let schema = Schema::from_config(schema).unwrap();
         let mut state = to_empty_state(&schema, &mut ChaCha8Rng::seed_from_u64(0));
         state.categories[0].values[0] = ("cat".into(), true);
         state.categories[1].values[0] = ("chris".into(), true);
@@ -416,7 +444,7 @@ mod unit_tests {
 #[cfg(test)]
 mod prop_tests {
     use super::Schema;
-    use crate::{app::to_empty_state, filename::selection_to_filename};
+    use crate::{app::to_empty_state, config, filename::selection_to_filename};
     use quickcheck::{Gen, QuickCheck, TestResult};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
@@ -425,10 +453,11 @@ mod prop_tests {
     // TODO this does not include the salt and it should
     #[test]
     fn parse_generated_schemas() {
-        fn closed_loop(schema: Schema, selection: u32, seed: u64) -> TestResult {
-            if schema.check().is_err() {
-                return TestResult::discard();
-            }
+        fn closed_loop(schema: config::Schema, selection: u32, seed: u64) -> TestResult {
+            let schema = match Schema::from_config(schema) {
+                Err(_) => return TestResult::discard(),
+                Ok(x) => x,
+            };
 
             // quickcheck doesn't have a great way to generate bool values larger than the gen size
             // so I'm using this u32 like each bit is an arbitrary bool.
@@ -469,6 +498,6 @@ mod prop_tests {
 
         QuickCheck::new()
             .gen(Gen::new(5))
-            .quickcheck(closed_loop as fn(Schema, u32, u64) -> TestResult);
+            .quickcheck(closed_loop as fn(config::Schema, u32, u64) -> TestResult);
     }
 }

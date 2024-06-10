@@ -1,4 +1,5 @@
 pub mod app;
+pub mod config;
 pub mod error;
 pub mod filename;
 pub mod fs_util;
@@ -33,6 +34,7 @@ pub fn run() -> Result<()> {
     let mut schema_path = working_dir.clone();
     schema_path.push("schema.dhall");
     let contents = fs::read_to_string(schema_path).map_err(Error::FailedToReadContents)?;
-    let schema = schema::parse_schema(&contents)?;
+    let input = config::parse_schema(&contents)?;
+    let schema = schema::Schema::from_config(input)?;
     App::run_with(schema, working_dir)
 }

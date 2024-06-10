@@ -280,8 +280,8 @@ pub fn to_empty_state(schema: &Schema, rng: &mut ChaCha8Rng) -> State {
             .categories()
             .iter()
             .map(|cat| UiCategory {
-                name: cat.name.clone(),
-                values: cat.values.clone().into_iter().map(|k| (k, false)).collect(),
+                name: cat.name().into(),
+                values: cat.values().iter().map(|k| (k.clone(), false)).collect(),
             })
             .collect(),
     }
