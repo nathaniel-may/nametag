@@ -14,22 +14,34 @@ let Category : Type =
       , values : List Text
       }
 
+let Salt : Type =
+      { rtype : Restriction
+      , rvalue : Natural
+      , values : Text
+      }
+
+let Block = < Category: Category | Salt: Salt >
+
 let Schema : Type =
       { delim : Text
-      , categories : List Category
+      , blocks : List Block
       }
 
 -- vv  your values go here  vv --
 
 let schema : Schema =
       { delim = "-"
-      , categories =
-        [ { name = "Medium"
+      , blocks =
+        [ Block.Salt { rtype = Restriction.Exactly
+          , rvalue = 6
+          , values = "ABCDEFGHIJKLMNPQRSTUVWXYZ123456789"
+          }
+        , Block.Category { name = "Medium"
           , rtype = Restriction.Exactly
           , rvalue = 1
           , values = ["art", "photo", "ai", "other"]
           }
-        , { name = "Subject"
+        , Block.Category { name = "Subject"
           , rtype = Restriction.AtLeast
           , rvalue = 0
           , values = ["plants", "animals", "people"]

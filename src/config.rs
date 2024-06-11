@@ -1,3 +1,9 @@
+//! The user interface.
+//!
+//! All these types can be freely created from anywhere without restriction.
+//! They must be converted into internal types to continue with program
+//! execution which will reject certain states in the process.
+
 use crate::error::{Error::ConfigParse, Result};
 #[cfg(test)]
 use quickcheck::Arbitrary;
@@ -9,7 +15,7 @@ use Requirement::*;
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize)]
 pub struct Schema {
     pub delim: String,
-    pub categories: Vec<Category>,
+    pub blocks: Vec<Block>,
 }
 
 #[cfg(test)]
@@ -22,23 +28,23 @@ impl Arbitrary for Schema {
 
         Schema {
             delim,
-            categories: Arbitrary::arbitrary(g),
+            blocks: Arbitrary::arbitrary(g),
         }
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         let cats = self
-            .categories
+            .blocks
             .shrink()
             .map(|categories| Schema {
                 delim: self.delim.clone(),
-                categories,
+                blocks: categories,
             })
             .collect::<Vec<_>>();
 
         let delims = self.delim.shrink().map(|delim| Schema {
             delim,
-            categories: self.categories.clone(),
+            blocks: self.blocks.clone(),
         });
 
         let mut all = cats;
@@ -80,6 +86,68 @@ impl Arbitrary for Category {
                 .collect::<Vec<_>>()
                 .into_iter(),
         )
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize)]
+pub struct Salt {
+    pub rtype: Requirement,
+    pub rvalue: usize,
+    pub values: String,
+}
+
+#[cfg(test)]
+impl Arbitrary for Salt {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+        Salt {
+            rtype: Arbitrary::arbitrary(g),
+            rvalue: Arbitrary::arbitrary(g),
+            values: Arbitrary::arbitrary(g),
+        }
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        let i = self
+            .values
+            .shrink()
+            .map(|s| Salt {
+                rtype: self.rtype,
+                rvalue: self.rvalue.shrink().next().unwrap_or(self.rvalue),
+                values: s,
+            })
+            .collect::<Vec<_>>()
+            .into_iter();
+        Box::new(i)
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize)]
+pub enum Block {
+    Category(Category),
+    Salt(Salt),
+}
+
+#[cfg(test)]
+impl Arbitrary for Block {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+        if Arbitrary::arbitrary(g) {
+            Block::Category(Arbitrary::arbitrary(g))
+        } else {
+            Block::Salt(Arbitrary::arbitrary(g))
+        }
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        let i = match self {
+            Block::Category(x) => x
+                .shrink()
+                .map(Block::Category)
+                .collect::<Vec<_>>()
+                .into_iter(),
+            Block::Salt(x) => x.shrink().map(Block::Salt).collect::<Vec<_>>().into_iter(),
+        };
+
+        Box::new(i)
     }
 }
 

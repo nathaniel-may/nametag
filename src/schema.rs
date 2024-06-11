@@ -50,45 +50,69 @@ impl Schema {
 
         let mut m: HashSet<&str> = HashSet::new();
 
-        for cat in &config.categories {
-            if cat.values.is_empty() {
-                return Err(Error::CategoryWithNoTags {
-                    category_name: cat.name.clone(),
-                });
-            }
-            if cat.values.contains(&String::new()) {
-                return Err(Error::EmptyStringNotValidTag);
-            }
+        for block in &config.blocks {
+            match block {
+                config::Block::Salt(config::Salt { .. }) => {}
+                config::Block::Category(config::Category {
+                    name,
+                    rtype,
+                    rvalue,
+                    values,
+                }) => {
+                    if values.is_empty() {
+                        return Err(Error::CategoryWithNoTags {
+                            category_name: name.clone(),
+                        });
+                    }
+                    if values.contains(&String::new()) {
+                        return Err(Error::EmptyStringNotValidTag);
+                    }
 
-            for v in &cat.values {
-                if !m.insert(v) {
-                    return Err(Error::TagsMustBeUnique {
-                        category_name: cat.name.clone(),
-                        duplicated_tag: v.clone(),
-                    });
-                }
-                if v.contains(&config.delim) {
-                    return Err(Error::DelimiterFoundInTag {
-                        category_name: cat.name.clone(),
-                        tag: v.clone(),
-                    });
-                }
-                for c in v.chars() {
-                    if !Schema::char_allowed(c) {
-                        return Err(Error::InvalidCharacterInTag(c));
+                    for v in values {
+                        if !m.insert(v) {
+                            return Err(Error::TagsMustBeUnique {
+                                category_name: name.clone(),
+                                duplicated_tag: v.clone(),
+                            });
+                        }
+                        if v.contains(&config.delim) {
+                            return Err(Error::DelimiterFoundInTag {
+                                category_name: name.clone(),
+                                tag: v.clone(),
+                            });
+                        }
+                        for c in v.chars() {
+                            if !Schema::char_allowed(c) {
+                                return Err(Error::InvalidCharacterInTag(c));
+                            }
+                        }
                     }
                 }
             }
         }
 
-        let mut categories = Vec::with_capacity(config.categories.len());
-        for cat in config.categories {
-            let cat = Category {
-                name: cat.name,
-                req: (cat.rtype, cat.rvalue).into(),
-                values: cat.values,
-            };
-            categories.push(cat);
+        let mut categories = Vec::with_capacity(config.blocks.len());
+        for block in config.blocks {
+            match block {
+                config::Block::Salt(config::Salt {
+                    rtype,
+                    rvalue,
+                    values,
+                }) => {}
+                config::Block::Category(config::Category {
+                    name,
+                    rtype,
+                    rvalue,
+                    values,
+                }) => {
+                    let cat = Category {
+                        name,
+                        req: (rtype, rvalue).into(),
+                        values,
+                    };
+                    categories.push(cat);
+                }
+            }
         }
         let schema = Schema {
             delim: config.delim,
@@ -274,16 +298,23 @@ mod unit_tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    fn schema_with_tag(tag: &str) -> config::Schema {
-        let categories = vec![config::Category {
-            name: "Animals".to_string(),
-            rtype: config::Requirement::AtLeast,
-            rvalue: 0,
-            values: vec![tag.to_string()],
-        }];
+    fn blocks_with_tag(tag: &str) -> config::Schema {
+        let categories = vec![
+            config::Block::Salt(config::Salt {
+                rtype: config::Requirement::Exactly,
+                rvalue: 3,
+                values: "ABC123".into(),
+            }),
+            config::Block::Category(config::Category {
+                name: "Animals".to_string(),
+                rtype: config::Requirement::AtLeast,
+                rvalue: 0,
+                values: vec![tag.to_string()],
+            }),
+        ];
         config::Schema {
             delim: "-".to_string(),
-            categories,
+            blocks: categories,
         }
     }
 
@@ -294,8 +325,8 @@ mod unit_tests {
 
         let expected = config::Schema {
             delim: "-".to_string(),
-            categories: vec![
-                config::Category {
+            blocks: vec![
+                config::Block::Category(config::Category {
                     name: "Medium".to_string(),
                     rtype: config::Requirement::Exactly,
                     rvalue: 1,
@@ -305,8 +336,8 @@ mod unit_tests {
                         "ai".to_string(),
                         "other".to_string(),
                     ],
-                },
-                config::Category {
+                }),
+                config::Block::Category(config::Category {
                     name: "Subject".to_string(),
                     rtype: config::Requirement::AtLeast,
                     rvalue: 0,
@@ -315,7 +346,7 @@ mod unit_tests {
                         "animals".to_string(),
                         "people".to_string(),
                     ],
-                },
+                }),
             ],
         };
 
@@ -329,12 +360,12 @@ mod unit_tests {
     fn disallow_empty_tags() {
         let schema = config::Schema {
             delim: "-".to_string(),
-            categories: vec![config::Category {
+            blocks: vec![config::Block::Category(config::Category {
                 name: "Animals".to_string(),
                 rtype: config::Requirement::AtMost,
                 rvalue: 2,
                 values: vec![],
-            }],
+            })],
         };
 
         match Schema::from_config(schema) {
@@ -348,7 +379,7 @@ mod unit_tests {
 
     #[test]
     fn disallow_empty_string_tag() {
-        match Schema::from_config(schema_with_tag("")) {
+        match Schema::from_config(blocks_with_tag("")) {
             Err(Error::EmptyStringNotValidTag) => (),
             Err(e) => panic!("{e:?}"),
             Ok(x) => panic!("{x:?}"),
@@ -357,7 +388,7 @@ mod unit_tests {
 
     #[test]
     fn disallow_null_tag() {
-        match Schema::from_config(schema_with_tag("\0")) {
+        match Schema::from_config(blocks_with_tag("\0")) {
             Err(Error::InvalidCharacterInTag(c)) => assert_eq!(c, '\0'),
             Err(e) => panic!("{e:?}"),
             Ok(x) => panic!("{x:?}"),
@@ -366,7 +397,7 @@ mod unit_tests {
 
     #[test]
     fn disallow_empty_string_delim() {
-        let mut schema = schema_with_tag("cat");
+        let mut schema = blocks_with_tag("cat");
         schema.delim = "".into();
         match Schema::from_config(schema) {
             Err(Error::EmptyDelimiter) => (),
@@ -377,7 +408,7 @@ mod unit_tests {
 
     #[test]
     fn disallow_null_delim() {
-        let mut schema = schema_with_tag("cat");
+        let mut schema = blocks_with_tag("cat");
         schema.delim = "\0".into();
         match Schema::from_config(schema) {
             Err(Error::InvalidCharacterInDelim(c)) => assert_eq!(c, '\0'),
@@ -388,7 +419,7 @@ mod unit_tests {
 
     #[test]
     fn no_tags_can_contain_delimiter() {
-        let mut schema = schema_with_tag("super-cat");
+        let mut schema = blocks_with_tag("super-cat");
         schema.delim = "-".into();
         match Schema::from_config(schema) {
             Err(Error::DelimiterFoundInTag { tag, .. }) => assert_eq!(tag, "super-cat"),
@@ -399,13 +430,15 @@ mod unit_tests {
 
     #[test]
     fn all_tags_must_be_unique() {
-        let mut schema = schema_with_tag("cat");
-        schema.categories.push(config::Category {
-            name: "People".to_string(),
-            rtype: config::Requirement::AtLeast,
-            rvalue: 0,
-            values: vec!["chris".to_string(), "cat".to_string(), "nathan".to_string()],
-        });
+        let mut schema = blocks_with_tag("cat");
+        schema
+            .blocks
+            .push(config::Block::Category(config::Category {
+                name: "People".to_string(),
+                rtype: config::Requirement::AtLeast,
+                rvalue: 0,
+                values: vec!["chris".to_string(), "cat".to_string(), "nathan".to_string()],
+            }));
 
         match Schema::from_config(schema) {
             Err(Error::TagsMustBeUnique {
@@ -422,13 +455,15 @@ mod unit_tests {
 
     #[test]
     fn basic_parse_two_categories() {
-        let mut schema = schema_with_tag("cat");
-        schema.categories.push(config::Category {
-            name: "People".to_string(),
-            rtype: config::Requirement::AtLeast,
-            rvalue: 0,
-            values: vec!["chris".to_string(), "nathan".to_string()],
-        });
+        let mut schema = blocks_with_tag("cat");
+        schema
+            .blocks
+            .push(config::Block::Category(config::Category {
+                name: "People".to_string(),
+                rtype: config::Requirement::AtLeast,
+                rvalue: 0,
+                values: vec!["chris".to_string(), "nathan".to_string()],
+            }));
         let schema = Schema::from_config(schema).unwrap();
         let mut state = to_empty_state(&schema, &mut ChaCha8Rng::seed_from_u64(0));
         state.categories[0].values[0] = ("cat".into(), true);
