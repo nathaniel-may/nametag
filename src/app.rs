@@ -12,6 +12,7 @@ use eframe::egui::{
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::{
+    collections::HashMap,
     fs::File,
     io::Read,
     path::{Path, PathBuf},
@@ -43,6 +44,7 @@ pub struct App {
     pub ui_state: Vec<UiBlock>,
     pub files: Vec<PathBuf>,
     pub rng: ChaCha8Rng,
+    pub parsed_counts: HashMap<String, usize>,
 }
 
 impl App {
@@ -67,6 +69,7 @@ impl App {
 
         let mut rng = ChaCha8Rng::from_entropy();
         let ui_state = to_empty_state(&schema, &mut rng);
+        let parsed_counts = App::reparse_recount(&schema, &files);
 
         let mut app = App {
             // dummy ctx that gets immediately overwritten.
@@ -79,6 +82,7 @@ impl App {
             zoom: 1.0,
             files,
             rng,
+            parsed_counts,
         };
 
         info!("Building the UI");
@@ -115,6 +119,33 @@ impl App {
         Ok(())
     }
 
+    fn reparse_recount(schema: &Schema, files: &[PathBuf]) -> HashMap<String, usize> {
+        let mut m = HashMap::new();
+        for file in files {
+            let name = file.file_stem().unwrap().to_string_lossy();
+            match schema.parse(&name) {
+                Err(_) => {
+                    *m.entry("__error".to_string()).or_insert(0) += 1;
+                }
+                Ok(blocks) => {
+                    for block in blocks {
+                        match block {
+                            UiBlock::Salt { .. } => (),
+                            UiBlock::Category { values, .. } => {
+                                for (tag, present) in values {
+                                    if present {
+                                        *m.entry(tag.clone()).or_insert(0) += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        m
+    }
+
     fn clear_state(&mut self) {
         self.ui_state = to_empty_state(&self.schema, &mut self.rng)
     }
@@ -125,7 +156,8 @@ impl App {
         self.ui_state.iter_mut().for_each(|block| match block {
             UiBlock::Salt { value, definition } => *value = gen_salt(definition, &mut self.rng),
             UiBlock::Category { .. } => (),
-        })
+        });
+        self.parse_current_file();
     }
 
     fn prev(&mut self) {
@@ -134,7 +166,8 @@ impl App {
         self.ui_state.iter_mut().for_each(|block| match block {
             UiBlock::Salt { value, definition } => *value = gen_salt(definition, &mut self.rng),
             UiBlock::Category { .. } => (),
-        })
+        });
+        self.parse_current_file();
     }
 
     fn inc_file_index_by(&self, n: usize, current: usize) -> usize {
@@ -202,6 +235,15 @@ impl App {
                 }
             }
         }
+    }
+
+    /// sets the ui_state if the current file's filename can be parsed
+    fn parse_current_file(&mut self) {
+        let state = self
+            .schema
+            .parse(&self.active_file().file_stem().unwrap().to_string_lossy())
+            .unwrap_or_else(|_| to_empty_state(&self.schema, &mut self.rng));
+        self.ui_state = state
     }
 
     fn apply_rename(&mut self) {
@@ -290,7 +332,11 @@ impl eframe::App for App {
                         UiBlock::Category { name, values } => {
                             ui.label(name.clone());
                             for (name, mut checked) in values {
-                                ui.checkbox(&mut checked, name.as_str());
+                                let label = format!(
+                                    "{name} ({})",
+                                    self.parsed_counts.get(name).unwrap_or(&0)
+                                );
+                                ui.checkbox(&mut checked, &label);
                             }
                         }
                         UiBlock::Salt { .. } => (),
