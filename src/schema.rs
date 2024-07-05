@@ -18,6 +18,7 @@ pub enum FilenameParseError {
     MissingSalt,
     FailedToParseSalt(String),
     MisplacedDelim,
+    OutsideRequirements(String, Requirement),
 }
 
 impl fmt::Display for FilenameParseError {
@@ -29,6 +30,10 @@ impl fmt::Display for FilenameParseError {
             MisplacedDelim => write!(
                 f,
                 "Misplaced delimiter found. All delimiters must be seperating two values."
+            ),
+            OutsideRequirements(name, req) => write!(
+                f,
+                "Filename does not conform to a block's requirements: {name} + {req}"
             ),
         }
     }
@@ -90,12 +95,7 @@ impl Schema {
                     }
                     _ => (),
                 },
-                config::Block::Category(config::Category {
-                    name,
-                    rtype,
-                    rvalue,
-                    values,
-                }) => {
+                config::Block::Category(config::Category { name, values, .. }) => {
                     if values.is_empty() {
                         return Err(Error::CategoryWithNoTags {
                             category_name: name.clone(),
@@ -191,6 +191,10 @@ impl Schema {
                         .iter()
                         .collect();
                     if maybe_salt == drained {
+                        if !fits_requirement(*req, drained.len()) {
+                            return Err(OutsideRequirements("Salt".to_string(), *req));
+                        }
+
                         blocks.push(UiBlock::Salt {
                             value: maybe_salt.into(),
                             definition: Salt {
@@ -209,7 +213,11 @@ impl Schema {
                         .clone()
                         .into_iter()
                         .map(|name| (name.clone(), applied_tags.contains(&name.as_str())))
-                        .collect();
+                        .collect::<Vec<_>>();
+
+                    if !fits_requirement(*req, values.len()) {
+                        return Err(OutsideRequirements(name.clone(), *req));
+                    }
 
                     blocks.push(UiBlock::Category {
                         name: name.clone(),
@@ -224,6 +232,14 @@ impl Schema {
             None | Some("") => Ok(blocks),
             Some(tag) => Err(FilenameParseError::UnexpectedTag(tag.into())),
         }
+    }
+}
+
+fn fits_requirement(req: Requirement, count: usize) -> bool {
+    match req {
+        Requirement::AtLeast(n) => count >= n,
+        Requirement::Exactly(n) => count == n,
+        Requirement::AtMost(n) => count < n,
     }
 }
 
@@ -424,7 +440,7 @@ impl fmt::Display for Requirement {
 #[cfg(test)]
 mod unit_tests {
     use crate::app::{to_empty_state, UiBlock};
-    use crate::config::{self, parse_schema, Block};
+    use crate::config::{self, parse_schema};
     use crate::error::Error;
     use crate::filename::selection_to_filename;
     use crate::schema::Schema;
@@ -696,6 +712,9 @@ mod prop_tests {
                 // The random state doesn't add up to a valid filename given the category restrictions
                 Err(_) => TestResult::discard(),
                 Ok(filename) => match schema.parse(&filename) {
+                    Err(super::FilenameParseError::OutsideRequirements(_, _)) => {
+                        TestResult::discard()
+                    }
                     Err(e) => {
                         println!("error:    {e}");
                         println!("schema:   {schema:?}");
@@ -723,6 +742,9 @@ mod prop_tests {
 
         QuickCheck::new()
             .gen(Gen::new(5))
+            .tests(100000)
+            .max_tests(100000)
+            .min_tests_passed(500)
             .quickcheck(closed_loop as fn(config::Schema, u32, u64) -> TestResult);
     }
 }
