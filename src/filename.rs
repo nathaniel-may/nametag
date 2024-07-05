@@ -16,7 +16,7 @@ use GenerateFilenameError::*;
 pub enum GenerateFilenameError {
     RequirementMismatch {
         category_name: String,
-        expected: (Requirement, usize),
+        expected: Requirement,
         selected: usize,
     },
 }
@@ -26,11 +26,11 @@ impl fmt::Display for GenerateFilenameError {
         match self {
             Self::RequirementMismatch {
                 category_name,
-                expected: (rtype, rvalue),
+                expected: rtype,
                 selected,
             } => write!(
                 f,
-                "{category_name} must have {rtype} {rvalue} tag but {selected} are selected."
+                "{category_name} must have {rtype} tag but {selected} are selected."
             ),
         }
     }
@@ -63,17 +63,17 @@ pub fn selection_to_filename(
                 match req {
                     expected @ Exactly(n) if tags.len() != n => Err(RequirementMismatch {
                         category_name: name.clone(),
-                        expected: (expected, n),
+                        expected,
                         selected: tags.len(),
                     }),
                     expected @ AtMost(n) if tags.len() > n => Err(RequirementMismatch {
                         category_name: name.clone(),
-                        expected: (expected, n),
+                        expected,
                         selected: tags.len(),
                     }),
                     expected @ AtLeast(n) if tags.len() < n => Err(RequirementMismatch {
                         category_name: name.clone(),
-                        expected: (expected, n),
+                        expected,
                         selected: tags.len(),
                     }),
                     _ => {
