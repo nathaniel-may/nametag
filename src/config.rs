@@ -55,6 +55,36 @@ impl Arbitrary for Schema {
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize)]
+pub enum Block {
+    Category(Category),
+    Salt(Salt),
+}
+
+#[cfg(test)]
+impl Arbitrary for Block {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+        if Arbitrary::arbitrary(g) {
+            Block::Category(Arbitrary::arbitrary(g))
+        } else {
+            Block::Salt(Arbitrary::arbitrary(g))
+        }
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        let i = match self {
+            Block::Category(x) => x
+                .shrink()
+                .map(Block::Category)
+                .collect::<Vec<_>>()
+                .into_iter(),
+            Block::Salt(x) => x.shrink().map(Block::Salt).collect::<Vec<_>>().into_iter(),
+        };
+
+        Box::new(i)
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize)]
 pub struct Category {
     pub name: String,
     pub rtype: Requirement,
@@ -101,7 +131,9 @@ impl Arbitrary for Salt {
     fn arbitrary(g: &mut quickcheck::Gen) -> Self {
         Salt {
             rtype: Arbitrary::arbitrary(g),
-            rvalue: Arbitrary::arbitrary(g),
+            // use the number of digits in the size (one less to include zero)
+            // so tests aren't generating salts with billions of digits.
+            rvalue: g.size().checked_ilog10().unwrap_or(0) as usize,
             values: Arbitrary::arbitrary(g),
         }
     }
@@ -117,36 +149,6 @@ impl Arbitrary for Salt {
             })
             .collect::<Vec<_>>()
             .into_iter();
-        Box::new(i)
-    }
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize)]
-pub enum Block {
-    Category(Category),
-    Salt(Salt),
-}
-
-#[cfg(test)]
-impl Arbitrary for Block {
-    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-        if Arbitrary::arbitrary(g) {
-            Block::Category(Arbitrary::arbitrary(g))
-        } else {
-            Block::Salt(Arbitrary::arbitrary(g))
-        }
-    }
-
-    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        let i = match self {
-            Block::Category(x) => x
-                .shrink()
-                .map(Block::Category)
-                .collect::<Vec<_>>()
-                .into_iter(),
-            Block::Salt(x) => x.shrink().map(Block::Salt).collect::<Vec<_>>().into_iter(),
-        };
-
         Box::new(i)
     }
 }

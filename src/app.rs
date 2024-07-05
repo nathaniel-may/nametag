@@ -2,15 +2,13 @@ use crate::{
     error::{Error, Result},
     filename::{self, gen_salt},
     fs_util,
-    schema::Schema,
+    schema::{self, Schema},
 };
 use eframe::egui::{
     self,
     panel::{Side, TopBottomSide},
     Button, Color32, FontFamily, Key, Label,
 };
-#[cfg(test)]
-use quickcheck::Arbitrary;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::{
@@ -23,62 +21,15 @@ use std::{
 use tracing::{error, info};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct State {
-    // salts are stored so they don't regenerate in the UI on every redraw
-    pub salt: String,
-    pub categories: Vec<UiCategory>,
-}
-
-#[cfg(test)]
-impl Arbitrary for State {
-    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-        State {
-            salt: gen_salt(&mut ChaCha8Rng::seed_from_u64(Arbitrary::arbitrary(g))),
-            categories: Arbitrary::arbitrary(g),
-        }
-    }
-
-    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        Box::new(
-            self.categories
-                .shrink()
-                .map(|categories| State {
-                    salt: self.salt.clone(),
-                    categories,
-                })
-                .collect::<Vec<_>>()
-                .into_iter(),
-        )
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UiCategory {
-    pub name: String,
-    pub values: Vec<(String, bool)>,
-}
-
-#[cfg(test)]
-impl Arbitrary for UiCategory {
-    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-        UiCategory {
-            name: Arbitrary::arbitrary(g),
-            values: Arbitrary::arbitrary(g),
-        }
-    }
-
-    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        Box::new(
-            self.values
-                .shrink()
-                .map(|values| UiCategory {
-                    name: self.name.shrink().next().unwrap_or("".to_string()),
-                    values,
-                })
-                .collect::<Vec<_>>()
-                .into_iter(),
-        )
-    }
+pub enum UiBlock {
+    Salt {
+        value: String,
+        definition: schema::Salt,
+    },
+    Category {
+        name: String,
+        values: Vec<(String, bool)>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -89,7 +40,7 @@ pub struct App {
     pub active: usize,
     pub file_id: String,
     pub zoom: f32,
-    pub ui_state: State,
+    pub ui_state: Vec<UiBlock>,
     pub files: Vec<PathBuf>,
     pub rng: ChaCha8Rng,
 }
@@ -171,13 +122,19 @@ impl App {
     fn next(&mut self) {
         self.active = self.inc_file_index_by(1, self.active);
         self.zoom = 1.0;
-        self.ui_state.salt = gen_salt(&mut self.rng);
+        self.ui_state.iter_mut().for_each(|block| match block {
+            UiBlock::Salt { value, definition } => *value = gen_salt(definition, &mut self.rng),
+            UiBlock::Category { .. } => (),
+        })
     }
 
     fn prev(&mut self) {
         self.active = self.dec_file_index_by(1, self.active);
         self.zoom = 1.0;
-        self.ui_state.salt = gen_salt(&mut self.rng);
+        self.ui_state.iter_mut().for_each(|block| match block {
+            UiBlock::Salt { value, definition } => *value = gen_salt(definition, &mut self.rng),
+            UiBlock::Category { .. } => (),
+        })
     }
 
     fn inc_file_index_by(&self, n: usize, current: usize) -> usize {
@@ -273,18 +230,28 @@ impl App {
 }
 
 // rng generates the first salt
-pub fn to_empty_state(schema: &Schema, rng: &mut ChaCha8Rng) -> State {
-    State {
-        salt: gen_salt(rng),
-        categories: schema
-            .categories()
-            .iter()
-            .map(|cat| UiCategory {
-                name: cat.name().into(),
-                values: cat.values().iter().map(|k| (k.clone(), false)).collect(),
-            })
-            .collect(),
-    }
+pub fn to_empty_state(schema: &Schema, rng: &mut ChaCha8Rng) -> Vec<UiBlock> {
+    schema
+        .blocks()
+        .iter()
+        .map(|block| match block {
+            schema::Block::Salt(salt) => UiBlock::Salt {
+                value: gen_salt(salt, rng),
+                definition: salt.clone(),
+            },
+            schema::Block::Category(cat) => {
+                let values = cat
+                    .values()
+                    .iter()
+                    .map(|name| (name.clone(), false))
+                    .collect();
+                UiBlock::Category {
+                    name: cat.name().to_string(),
+                    values,
+                }
+            }
+        })
+        .collect()
 }
 
 impl eframe::App for App {
@@ -318,13 +285,17 @@ impl eframe::App for App {
                 ui.separator();
                 ui.add_space(4.0);
 
-                self.ui_state.categories.iter_mut().for_each(|cat| {
-                    ui.label(cat.name.clone());
-                    cat.values.iter_mut().for_each(|kw| {
-                        let name = kw.0.clone();
-                        ui.checkbox(&mut kw.1, name);
-                    })
-                })
+                for block in &mut self.ui_state {
+                    match block {
+                        UiBlock::Category { name, values } => {
+                            ui.label(name.clone());
+                            for (name, mut checked) in values {
+                                ui.checkbox(&mut checked, name.as_str());
+                            }
+                        }
+                        UiBlock::Salt { .. } => (),
+                    }
+                }
             });
         });
 

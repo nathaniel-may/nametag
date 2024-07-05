@@ -19,6 +19,7 @@ pub enum Error {
     // TODO separate error type for config checking?
     EmptyStringNotValidTag,
     EmptyDelimiter,
+    NoBlocks,
     InvalidCharacterInTag(char),
     InvalidCharacterInDelim(char),
     DelimiterFoundInTag {
@@ -60,6 +61,7 @@ impl fmt::Display for Error {
             TagsMustBeUnique { category_name, duplicated_tag } => write!(f, "The tag \"{duplicated_tag}\" in category {category_name} has already been used in a prior category."),
             InvalidCharacterInTag(c) => write!(f, "Tags cannot contain the character {c}"),
             EmptyDelimiter => write!(f, "Delimiter cannot be the empty string."),
+            NoBlocks => write!(f, "Schema must have at least one block, considerusing a single salt block instead."),
             InvalidCharacterInDelim(c) => write!(f, "Delimiters cannot contain the character {c}"),
             DelimiterFoundInTag { category_name, tag } => write!(f, "Tags cannot contain the specified delimiter. Change tag \"{tag}\" in category {category_name} to avoid the chosen delimiter."),
         }
@@ -75,6 +77,7 @@ impl StdError for Error {
             | TagsMustBeUnique { .. }
             | InvalidCharacterInTag(_)
             | EmptyDelimiter
+            | NoBlocks
             | InvalidCharacterInDelim(_)
             | DelimiterFoundInTag { .. } => None,
 

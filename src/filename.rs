@@ -1,13 +1,13 @@
 use crate::{
-    app::State,
+    app::UiBlock,
     schema::{
+        self,
         Requirement::{self, *},
         Schema,
     },
 };
 use core::fmt;
 use rand::distributions::{Distribution, Uniform};
-use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use std::error::Error as StdError;
 use GenerateFilenameError::*;
@@ -40,73 +40,82 @@ impl StdError for GenerateFilenameError {}
 
 pub fn selection_to_filename(
     schema: &Schema,
-    state: &State,
+    state: &[UiBlock],
 ) -> Result<String, GenerateFilenameError> {
-    let mut name = state.salt.clone();
-    name.push_str(schema.delim());
-    for cat in &state.categories[..] {
-        let cat_def = schema
-            .categories()
-            .iter()
-            .find(|s_cat| s_cat.name() == cat.name)
-            // since States are generated from Schemas, this should be safe
-            .unwrap();
-
-        let tags: Vec<String> = cat
-            .values
-            .iter()
-            .filter_map(|(tag, tf)| if *tf { Some(tag.clone()) } else { None })
-            .collect();
-
-        match cat_def.req() {
-            expected @ Exactly(n) if tags.len() != n => Err(RequirementMismatch {
-                category_name: cat.name.clone(),
-                expected: (expected, n),
-                selected: tags.len(),
-            }),
-            expected @ AtMost(n) if tags.len() > n => Err(RequirementMismatch {
-                category_name: cat.name.clone(),
-                expected: (expected, n),
-                selected: tags.len(),
-            }),
-            expected @ AtLeast(n) if tags.len() < n => Err(RequirementMismatch {
-                category_name: cat.name.clone(),
-                expected: (expected, n),
-                selected: tags.len(),
-            }),
-            _ => {
-                if tags.is_empty() {
-                    name.push_str(schema.delim())
-                }
-                for tag in tags {
-                    name.push_str(&tag);
-                    name.push_str(schema.delim())
-                }
-                Ok(())
+    let mut output = String::new();
+    for block in state {
+        match block {
+            UiBlock::Salt { value, .. } => {
+                output.push_str(value);
+                output.push_str(schema.delim())
             }
-        }?;
+            UiBlock::Category { name, values } => {
+                let req = schema
+                    .get_category_requirements(name)
+                    // since States are generated from Schemas, this should be safe
+                    .unwrap();
+
+                let tags: Vec<String> = values
+                    .iter()
+                    .filter_map(|(tag, tf)| if *tf { Some(tag.clone()) } else { None })
+                    .collect();
+
+                match req {
+                    expected @ Exactly(n) if tags.len() != n => Err(RequirementMismatch {
+                        category_name: name.clone(),
+                        expected: (expected, n),
+                        selected: tags.len(),
+                    }),
+                    expected @ AtMost(n) if tags.len() > n => Err(RequirementMismatch {
+                        category_name: name.clone(),
+                        expected: (expected, n),
+                        selected: tags.len(),
+                    }),
+                    expected @ AtLeast(n) if tags.len() < n => Err(RequirementMismatch {
+                        category_name: name.clone(),
+                        expected: (expected, n),
+                        selected: tags.len(),
+                    }),
+                    _ => {
+                        if tags.is_empty() {
+                            output.push_str(schema.delim())
+                        }
+                        for tag in tags {
+                            output.push_str(&tag);
+                            output.push_str(schema.delim())
+                        }
+                        Ok(())
+                    }
+                }?;
+            }
+        }
     }
 
     // remove the last delimeter added
     for _ in schema.delim().chars() {
-        name.pop();
+        output.pop();
     }
-    Ok(name)
+    Ok(output)
 }
 
-pub fn gen_salt(rng: &mut ChaCha8Rng) -> String {
-    (0..6)
-        .map(|_| rng.sample(IDChars) as char)
-        .collect::<String>()
-}
+pub fn gen_salt(salt: &schema::Salt, rng: &mut ChaCha8Rng) -> String {
+    let mut output = String::new();
+    let chars = salt.values().chars().collect::<Vec<char>>();
 
-struct IDChars;
+    let n = match salt.req() {
+        Requirement::Exactly(n) => n,
+        Requirement::AtLeast(n) => n,
+        Requirement::AtMost(n) => n,
+    };
 
-impl Distribution<u8> for IDChars {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> u8 {
-        const RANGE: usize = 25 + 9;
-        const CHARSET: &[u8] = b"ABCDEFGHIJKLMNPQRSTUVWXYZ123456789";
-        let range = Uniform::new(0, RANGE);
-        CHARSET[range.sample(rng)]
+    if n == 0 {
+        String::new()
+    } else {
+        for _ in 0..n {
+            let i = Uniform::new(0, chars.len()).sample(rng);
+            output.push(*chars.get(i).unwrap());
+        }
+
+        output
     }
 }

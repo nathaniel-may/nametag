@@ -1,4 +1,4 @@
-use crate::app::{State, UiCategory};
+use crate::app::UiBlock;
 use crate::config;
 use crate::error::Error;
 use crate::error::Result;
@@ -15,12 +15,16 @@ use Requirement::*;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FilenameParseError {
     UnexpectedTag(String),
+    MissingSalt,
+    FailedToParseSalt(String),
 }
 
 impl fmt::Display for FilenameParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             UnexpectedTag(tag) => write!(f, "Unexpected tag: {tag}"),
+            MissingSalt => write!(f, "Missing salt"),
+            FailedToParseSalt(salt) => write!(f, "Failed to parse salt. Found {salt}"),
         }
     }
 }
@@ -28,12 +32,29 @@ impl fmt::Display for FilenameParseError {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Schema {
     delim: String,
-    categories: Vec<Category>,
+    blocks: Vec<Block>,
 }
 
 impl Schema {
+    pub fn requires_salt(&self) -> bool {
+        self.blocks.iter().any(|x| matches!(x, Block::Salt(_)))
+    }
+
+    pub fn get_category_requirements(&self, name: &str) -> Option<Requirement> {
+        self.blocks.iter().find_map(|x| match x {
+            Block::Category(cat) => {
+                if cat.name == name {
+                    Some(cat.req())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        })
+    }
+
     fn char_allowed(c: char) -> bool {
-        // no control characters. They can't all be read back after being written.
+        // no control characters. They can't all be read back after being written. // TODO is that actually right?
         (c as u32) >= 32 && !['\0'].contains(&c)
     }
 
@@ -41,6 +62,9 @@ impl Schema {
     pub fn from_config(config: config::Schema) -> Result<Schema> {
         if config.delim.is_empty() {
             return Err(Error::EmptyDelimiter);
+        }
+        if config.blocks.is_empty() {
+            return Err(Error::NoBlocks);
         }
         for c in config.delim.chars() {
             if !Schema::char_allowed(c) {
@@ -91,14 +115,20 @@ impl Schema {
             }
         }
 
-        let mut categories = Vec::with_capacity(config.blocks.len());
+        let mut blocks: Vec<Block> = Vec::with_capacity(config.blocks.len());
         for block in config.blocks {
             match block {
                 config::Block::Salt(config::Salt {
                     rtype,
                     rvalue,
                     values,
-                }) => {}
+                }) => {
+                    let salt = Salt {
+                        req: (rtype, rvalue).into(),
+                        values,
+                    };
+                    blocks.push(Block::Salt(salt));
+                }
                 config::Block::Category(config::Category {
                     name,
                     rtype,
@@ -110,13 +140,13 @@ impl Schema {
                         req: (rtype, rvalue).into(),
                         values,
                     };
-                    categories.push(cat);
+                    blocks.push(Block::Category(cat));
                 }
             }
         }
         let schema = Schema {
             delim: config.delim,
-            categories,
+            blocks,
         };
         Ok(schema)
     }
@@ -125,40 +155,57 @@ impl Schema {
         self.delim.as_str()
     }
 
-    pub fn categories(&self) -> &[Category] {
-        &self.categories
+    pub fn blocks(&self) -> &[Block] {
+        &self.blocks
     }
 
-    pub fn parse(&self, input: &str) -> StdResult<State, FilenameParseError> {
+    pub fn parse(&self, input: &str) -> StdResult<Vec<UiBlock>, FilenameParseError> {
         let mut tags = input.split(&self.delim).peekable();
-        // todo actually parse valid salts.
-        let salt = tags.next().unwrap();
-        let mut categories = Vec::with_capacity(self.categories.len());
-        for cat in &self.categories[..] {
-            let applied_tags = tags.drain_while(|tag| cat.values.contains(&tag.to_string()));
 
-            let values = cat
-                .values
-                .clone()
-                .into_iter()
-                .map(|name| (name.clone(), applied_tags.contains(&name.as_str())))
-                .collect();
+        let mut blocks = Vec::with_capacity(self.blocks.len());
+        for block in &self.blocks[..] {
+            match block {
+                Block::Salt(Salt { req, values }) => {
+                    let maybe_salt = tags.next().ok_or(MissingSalt)?;
+                    let drained: String = maybe_salt
+                        .chars()
+                        .peekable()
+                        .drain_while(|&x| values.contains([x]))
+                        .iter()
+                        .collect();
+                    if maybe_salt == drained {
+                        blocks.push(UiBlock::Salt {
+                            value: maybe_salt.into(),
+                            definition: Salt {
+                                req: *req,
+                                values: values.clone(),
+                            },
+                        });
+                    } else {
+                        return Err(FailedToParseSalt(maybe_salt.into()));
+                    }
+                }
+                Block::Category(Category { name, req, values }) => {
+                    let applied_tags = tags.drain_while(|tag| values.contains(&tag.to_string()));
 
-            categories.push(UiCategory {
-                name: cat.name.clone(),
-                values,
-            });
+                    let values = values
+                        .clone()
+                        .into_iter()
+                        .map(|name| (name.clone(), applied_tags.contains(&name.as_str())))
+                        .collect();
+
+                    blocks.push(UiBlock::Category {
+                        name: name.clone(),
+                        values,
+                    });
+                }
+            }
         }
 
-        match &tags.collect::<Vec<_>>()[..] {
-            [] => {
-                let state = State {
-                    salt: salt.to_string(),
-                    categories,
-                };
-                Ok(state)
-            }
-            [h, ..] => Err(FilenameParseError::UnexpectedTag(h.to_string())),
+        match tags.next() {
+            // Some("") happens when the filename is completely empty
+            None | Some("") => Ok(blocks),
+            Some(tag) => Err(FilenameParseError::UnexpectedTag(tag.into())),
         }
     }
 }
@@ -173,29 +220,59 @@ impl Arbitrary for Schema {
 
         Schema {
             delim,
-            categories: Arbitrary::arbitrary(g),
+            blocks: Arbitrary::arbitrary(g),
         }
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         let cats = self
-            .categories
+            .blocks
             .shrink()
             .map(|categories| Schema {
                 delim: self.delim.clone(),
-                categories,
+                blocks: categories,
             })
             .collect::<Vec<_>>();
 
         let delims = self.delim.shrink().map(|delim| Schema {
             delim,
-            categories: self.categories.clone(),
+            blocks: self.blocks.clone(),
         });
 
         let mut all = cats;
         all.extend(delims);
 
         Box::new(all.into_iter())
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Block {
+    Category(Category),
+    Salt(Salt),
+}
+
+#[cfg(test)]
+impl Arbitrary for Block {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+        if Arbitrary::arbitrary(g) {
+            Block::Category(Arbitrary::arbitrary(g))
+        } else {
+            Block::Salt(Arbitrary::arbitrary(g))
+        }
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        let i = match self {
+            Block::Category(x) => x
+                .shrink()
+                .map(Block::Category)
+                .collect::<Vec<_>>()
+                .into_iter(),
+            Block::Salt(x) => x.shrink().map(Block::Salt).collect::<Vec<_>>().into_iter(),
+        };
+
+        Box::new(i)
     }
 }
 
@@ -245,6 +322,45 @@ impl Arbitrary for Category {
     }
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Salt {
+    req: Requirement,
+    values: String,
+}
+
+impl Salt {
+    pub fn req(&self) -> Requirement {
+        self.req
+    }
+
+    pub fn values(&self) -> &str {
+        &self.values
+    }
+}
+
+#[cfg(test)]
+impl Arbitrary for Salt {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+        Salt {
+            req: Arbitrary::arbitrary(g),
+            values: Arbitrary::arbitrary(g),
+        }
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        let i = self
+            .values
+            .shrink()
+            .map(|values| Salt {
+                req: self.req.shrink().next().unwrap_or(self.req),
+                values,
+            })
+            .collect::<Vec<_>>()
+            .into_iter();
+        Box::new(i)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Requirement {
     Exactly(usize),
@@ -290,7 +406,7 @@ impl fmt::Display for Requirement {
 
 #[cfg(test)]
 mod unit_tests {
-    use crate::app::to_empty_state;
+    use crate::app::{to_empty_state, UiBlock};
     use crate::config::{self, parse_schema};
     use crate::error::Error;
     use crate::filename::selection_to_filename;
@@ -326,6 +442,11 @@ mod unit_tests {
         let expected = config::Schema {
             delim: "-".to_string(),
             blocks: vec![
+                config::Block::Salt(config::Salt {
+                    rtype: config::Requirement::Exactly,
+                    rvalue: 6,
+                    values: "ABCDEFGHIJKLMNPQRSTUVWXYZ123456789".to_string(),
+                }),
                 config::Block::Category(config::Category {
                     name: "Medium".to_string(),
                     rtype: config::Requirement::Exactly,
@@ -466,11 +587,16 @@ mod unit_tests {
             }));
         let schema = Schema::from_config(schema).unwrap();
         let mut state = to_empty_state(&schema, &mut ChaCha8Rng::seed_from_u64(0));
-        state.categories[0].values[0] = ("cat".into(), true);
-        state.categories[1].values[0] = ("chris".into(), true);
+        state.iter_mut().for_each(|block| {
+            if let UiBlock::Category { values, .. } = block {
+                values
+                    .iter_mut()
+                    .for_each(|(tag, selected)| *selected = tag == "cat" || tag == "chris")
+            }
+        });
 
         let filename = selection_to_filename(&schema, &state).unwrap();
-        assert_eq!(filename, "ZQYC5T-cat-chris");
+        assert_eq!(filename, "2C2-cat-chris");
         let parsed_state = schema.parse(&filename).unwrap();
         assert_eq!(state, parsed_state)
     }
@@ -479,7 +605,11 @@ mod unit_tests {
 #[cfg(test)]
 mod prop_tests {
     use super::Schema;
-    use crate::{app::to_empty_state, config, filename::selection_to_filename};
+    use crate::{
+        app::{to_empty_state, UiBlock},
+        config,
+        filename::selection_to_filename,
+    };
     use quickcheck::{Gen, QuickCheck, TestResult};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
@@ -505,22 +635,34 @@ mod prop_tests {
             let mut rng = ChaCha8Rng::seed_from_u64(seed);
             let mut state = to_empty_state(&schema, &mut rng);
             let mut selection = bool_selection.to_vec();
-            for cat in &mut state.categories[..] {
-                let tags = cat.values.clone().into_iter().map(|(s, _)| s);
-                let size = tags.len();
-                cat.values = tags.zip(selection.drain(0..size)).collect();
-            }
+            state.iter_mut().for_each(|block| match block {
+                UiBlock::Category { values, .. } => {
+                    let tags = values.clone().into_iter().map(|(s, _)| s);
+                    let size = tags.len();
+                    *values = tags.zip(selection.drain(0..size)).collect();
+                }
+                UiBlock::Salt { .. } => (),
+            });
 
             match selection_to_filename(&schema, &state) {
                 // The random state doesn't add up to a valid filename given the category restrictions
                 Err(_) => TestResult::discard(),
                 Ok(filename) => match schema.parse(&filename) {
-                    Err(_) => TestResult::failed(),
+                    Err(e) => {
+                        println!("error:    {e}");
+                        println!("schema:   {schema:?}");
+                        println!("filename: {filename}");
+                        println!("chars:    {:?}", filename.chars());
+                        println!("state:    {state:?}");
+                        println!("-----------------");
+                        TestResult::failed()
+                    }
                     Ok(parsed_state) => {
                         // for debugging with --nocapture:
                         if parsed_state != state {
                             println!("schema:   {schema:?}");
                             println!("filename: {filename}");
+                            println!("chars:    {:?}", filename.chars());
                             println!("state:    {state:?}");
                             println!("parsed:   {parsed_state:?}");
                             println!("-----------------");
