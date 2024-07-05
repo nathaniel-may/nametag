@@ -77,9 +77,6 @@ pub fn selection_to_filename(
                         selected: tags.len(),
                     }),
                     _ => {
-                        if tags.is_empty() {
-                            output.push_str(schema.delim())
-                        }
                         for tag in tags {
                             output.push_str(&tag);
                             output.push_str(schema.delim())

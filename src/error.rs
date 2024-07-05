@@ -33,6 +33,7 @@ pub enum Error {
         category_name: String,
         duplicated_tag: String,
     },
+    SaltDefinitionMustExcludeEmptySalts,
 }
 
 impl fmt::Display for Error {
@@ -64,6 +65,7 @@ impl fmt::Display for Error {
             NoBlocks => write!(f, "Schema must have at least one block, considerusing a single salt block instead."),
             InvalidCharacterInDelim(c) => write!(f, "Delimiters cannot contain the character {c}"),
             DelimiterFoundInTag { category_name, tag } => write!(f, "Tags cannot contain the specified delimiter. Change tag \"{tag}\" in category {category_name} to avoid the chosen delimiter."),
+            SaltDefinitionMustExcludeEmptySalts => write!(f, "Salt definitions must explicitly exclude empty salts as valid. Use AtLeast n or Exactly n where n > 0 instead.")
         }
     }
 }
@@ -79,6 +81,7 @@ impl StdError for Error {
             | EmptyDelimiter
             | NoBlocks
             | InvalidCharacterInDelim(_)
+            | SaltDefinitionMustExcludeEmptySalts
             | DelimiterFoundInTag { .. } => None,
 
             ConfigParse(e) => Some(e),

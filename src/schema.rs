@@ -17,6 +17,7 @@ pub enum FilenameParseError {
     UnexpectedTag(String),
     MissingSalt,
     FailedToParseSalt(String),
+    MisplacedDelim,
 }
 
 impl fmt::Display for FilenameParseError {
@@ -25,6 +26,10 @@ impl fmt::Display for FilenameParseError {
             UnexpectedTag(tag) => write!(f, "Unexpected tag: {tag}"),
             MissingSalt => write!(f, "Missing salt"),
             FailedToParseSalt(salt) => write!(f, "Failed to parse salt. Found {salt}"),
+            MisplacedDelim => write!(
+                f,
+                "Misplaced delimiter found. All delimiters must be seperating two values."
+            ),
         }
     }
 }
@@ -76,7 +81,15 @@ impl Schema {
 
         for block in &config.blocks {
             match block {
-                config::Block::Salt(config::Salt { .. }) => {}
+                config::Block::Salt(config::Salt { rtype, rvalue, .. }) => match rtype {
+                    config::Requirement::AtMost => {
+                        return Err(Error::SaltDefinitionMustExcludeEmptySalts)
+                    }
+                    config::Requirement::Exactly | config::Requirement::AtLeast if *rvalue == 0 => {
+                        return Err(Error::SaltDefinitionMustExcludeEmptySalts)
+                    }
+                    _ => (),
+                },
                 config::Block::Category(config::Category {
                     name,
                     rtype,
@@ -160,7 +173,11 @@ impl Schema {
     }
 
     pub fn parse(&self, input: &str) -> StdResult<Vec<UiBlock>, FilenameParseError> {
-        let mut tags = input.split(&self.delim).peekable();
+        let tags = input.split(&self.delim).collect::<Vec<_>>();
+        if tags.contains(&"") && !input.is_empty() {
+            return Err(MisplacedDelim);
+        }
+        let mut tags = tags.into_iter().peekable();
 
         let mut blocks = Vec::with_capacity(self.blocks.len());
         for block in &self.blocks[..] {
@@ -407,7 +424,7 @@ impl fmt::Display for Requirement {
 #[cfg(test)]
 mod unit_tests {
     use crate::app::{to_empty_state, UiBlock};
-    use crate::config::{self, parse_schema};
+    use crate::config::{self, parse_schema, Block};
     use crate::error::Error;
     use crate::filename::selection_to_filename;
     use crate::schema::Schema;
@@ -495,6 +512,37 @@ mod unit_tests {
             }
             Err(e) => panic!("{e:?}"),
             Ok(x) => panic!("{x:?}"),
+        }
+    }
+
+    #[test]
+    fn disallow_empty_salt_values() {
+        let at_least0 = config::Salt {
+            rtype: config::Requirement::AtLeast,
+            rvalue: 0,
+            values: "ABC123".to_string(),
+        };
+        let exactly0 = config::Salt {
+            rtype: config::Requirement::Exactly,
+            rvalue: 0,
+            values: "ABC123".to_string(),
+        };
+        let at_most2 = config::Salt {
+            rtype: config::Requirement::AtMost,
+            rvalue: 2,
+            values: "ABC123".to_string(),
+        };
+
+        for salt in [at_least0, exactly0, at_most2] {
+            let schema = config::Schema {
+                delim: "-".to_string(),
+                blocks: vec![config::Block::Salt(salt)],
+            };
+            match Schema::from_config(schema) {
+                Err(Error::SaltDefinitionMustExcludeEmptySalts) => (),
+                Err(e) => panic!("{e:?}"),
+                Ok(x) => panic!("{x:?}"),
+            }
         }
     }
 
