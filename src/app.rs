@@ -153,20 +153,24 @@ impl App {
     fn next(&mut self) {
         self.active = self.inc_file_index_by(1, self.active);
         self.zoom = 1.0;
+        // generate the next salts
         self.ui_state.iter_mut().for_each(|block| match block {
             UiBlock::Salt { value, definition } => *value = gen_salt(definition, &mut self.rng),
             UiBlock::Category { .. } => (),
         });
+        // but overwrite them if the parsed file has one already
         self.parse_current_file();
     }
 
     fn prev(&mut self) {
         self.active = self.dec_file_index_by(1, self.active);
         self.zoom = 1.0;
+        // generate the next salts
         self.ui_state.iter_mut().for_each(|block| match block {
             UiBlock::Salt { value, definition } => *value = gen_salt(definition, &mut self.rng),
             UiBlock::Category { .. } => (),
         });
+        // but overwrite them if the parsed file has one already
         self.parse_current_file();
     }
 

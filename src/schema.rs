@@ -215,7 +215,7 @@ impl Schema {
                         .map(|name| (name.clone(), applied_tags.contains(&name.as_str())))
                         .collect::<Vec<_>>();
 
-                    if !fits_requirement(*req, values.len()) {
+                    if !fits_requirement(*req, values.iter().filter(|(_, x)| *x).count()) {
                         return Err(OutsideRequirements(name.clone(), *req));
                     }
 
@@ -663,6 +663,66 @@ mod unit_tests {
         assert_eq!(filename, "2C2-cat-chris");
         let parsed_state = schema.parse(&filename).unwrap();
         assert_eq!(state, parsed_state)
+    }
+
+    #[test]
+    fn parses_filenames() {
+        let config_contents = r#"
+let Restriction = < Exactly | AtLeast | AtMost >
+
+let Category : Type =
+        { name : Text
+        , rtype : Restriction
+        , rvalue : Natural
+        , values : List Text
+        }
+
+let Salt : Type =
+        { rtype : Restriction
+        , rvalue : Natural
+        , values : Text
+        }
+
+let Block = < Category: Category | Salt: Salt >
+
+let Schema : Type =
+        { delim : Text
+        , blocks : List Block
+        }
+
+-- vv  your values go here  vv --
+
+let schema : Schema =
+        { delim = "-"
+        , blocks =
+        [ Block.Salt { rtype = Restriction.Exactly
+            , rvalue = 6
+            , values = "ABCDEFGHIJKLMNPQRSTUVWXYZ123456789"
+            }
+        , Block.Category { name = "Medium"
+            , rtype = Restriction.Exactly
+            , rvalue = 1
+            , values = ["art", "photo", "ai", "other"]
+            }
+        , Block.Category { name = "Subject"
+            , rtype = Restriction.AtLeast
+            , rvalue = 0
+            , values = ["plants", "animals", "people"]
+            }
+        ]
+        }
+
+in  schema
+"#;
+        let config = config::parse_schema(config_contents).unwrap();
+        let schema = Schema::from_config(config).unwrap();
+        let filenames = vec!["ABC123-art-plants-animals-people", "999999-photo"];
+
+        for filename in filenames {
+            if let Err(e) = schema.parse(filename) {
+                panic!("failed to parse {filename}. Error: {e}")
+            }
+        }
     }
 }
 
