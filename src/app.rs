@@ -39,7 +39,6 @@ pub struct App {
     pub working_dir: PathBuf,
     pub schema: Schema,
     pub active: usize,
-    pub file_id: String,
     pub zoom: f32,
     pub ui_state: Vec<UiBlock>,
     pub files: Vec<PathBuf>,
@@ -78,7 +77,6 @@ impl App {
             ui_state,
             working_dir,
             active: 0,
-            file_id: "".to_string(),
             zoom: 1.0,
             files,
             rng,
@@ -185,13 +183,11 @@ impl App {
     fn mk_filename(&mut self) -> StdResult<String, String> {
         match filename::selection_to_filename(&self.schema, &self.ui_state) {
             Ok(name) => {
-                let id = self.file_id.clone();
-                let delim = self.schema.delim().to_string();
                 let ext = match self.active_file().extension() {
                     Some(ext) => format!(".{}", ext.to_string_lossy()),
                     None => String::new(),
                 };
-                Ok(format!("{id}{delim}{name}{ext}"))
+                Ok(format!("{name}{ext}"))
             }
             Err(e) => Err(e.to_string()),
         }
