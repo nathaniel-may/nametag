@@ -336,12 +336,12 @@ impl eframe::App for App {
                     match block {
                         UiBlock::Category { name, values } => {
                             ui.label(name.clone());
-                            for (name, mut checked) in values {
+                            for (name, checked) in values {
                                 let label = format!(
                                     "{name} ({})",
                                     self.parsed_counts.get(name).unwrap_or(&0)
                                 );
-                                ui.checkbox(&mut checked, &label);
+                                ui.checkbox(checked, &label);
                             }
                         }
                         UiBlock::Salt { .. } => (),
