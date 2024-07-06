@@ -151,25 +151,27 @@ impl App {
     fn next(&mut self) {
         self.active = self.inc_file_index_by(1, self.active);
         self.zoom = 1.0;
-        // generate the next salts
-        self.ui_state.iter_mut().for_each(|block| match block {
-            UiBlock::Salt { value, definition } => *value = gen_salt(definition, &mut self.rng),
-            UiBlock::Category { .. } => (),
-        });
-        // but overwrite them if the parsed file has one already
-        self.parse_current_file();
+        // attempt to parse the next file name which will include the salts
+        if !self.parse_current_file() {
+            // if that failed, generate new salts for the filename
+            self.ui_state.iter_mut().for_each(|block| match block {
+                UiBlock::Salt { value, definition } => *value = gen_salt(definition, &mut self.rng),
+                UiBlock::Category { .. } => (),
+            });
+        }
     }
 
     fn prev(&mut self) {
         self.active = self.dec_file_index_by(1, self.active);
         self.zoom = 1.0;
-        // generate the next salts
-        self.ui_state.iter_mut().for_each(|block| match block {
-            UiBlock::Salt { value, definition } => *value = gen_salt(definition, &mut self.rng),
-            UiBlock::Category { .. } => (),
-        });
-        // but overwrite them if the parsed file has one already
-        self.parse_current_file();
+        // attempt to parse the previous file name which will include the salts
+        if !self.parse_current_file() {
+            // if that failed, generate new salts for the filename
+            self.ui_state.iter_mut().for_each(|block| match block {
+                UiBlock::Salt { value, definition } => *value = gen_salt(definition, &mut self.rng),
+                UiBlock::Category { .. } => (),
+            });
+        }
     }
 
     fn inc_file_index_by(&self, n: usize, current: usize) -> usize {
@@ -238,12 +240,15 @@ impl App {
     }
 
     /// sets the ui_state if the current file's filename can be parsed
-    fn parse_current_file(&mut self) {
-        let state = self
+    /// returns true if it was successful, false it set the state to the empty state
+    fn parse_current_file(&mut self) -> bool {
+        let parsed = self
             .schema
-            .parse(&self.active_file().file_stem().unwrap().to_string_lossy())
-            .unwrap_or_else(|_| to_empty_state(&self.schema, &mut self.rng));
-        self.ui_state = state
+            .parse(&self.active_file().file_stem().unwrap().to_string_lossy());
+        let success = parsed.is_ok();
+        let state = parsed.unwrap_or_else(|_| to_empty_state(&self.schema, &mut self.rng));
+        self.ui_state = state;
+        success
     }
 
     fn apply_rename(&mut self) {
