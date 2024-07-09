@@ -10,6 +10,7 @@ use eframe::egui::{
     panel::{Side, TopBottomSide},
     Align, Button, Color32, FontFamily, ImageButton, ImageSource, Key, Label, Layout,
 };
+use egui_modal::Modal;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::{
@@ -185,6 +186,15 @@ impl AppDir {
             // update the list of filenames so the next refresh doesn't fail
             self.files[self.active] = to;
         }
+    }
+
+    fn delete_active(&mut self) {
+        // remove from cache
+        self.ctx.forget_image(&App::to_uri(self.active_file()));
+        // remove from file system
+        std::fs::remove_file(self.active_file()).unwrap();
+        // remove from list of files
+        self.files.remove(self.active);
     }
 }
 
@@ -409,6 +419,18 @@ impl eframe::App for App {
                 if ctx.input(|i| i.key_pressed(Key::Enter)) {
                     ad.apply_rename()
                 }
+
+                if ctx.input(|i| i.key_pressed(Key::Backspace)) {
+                    info!("delete pressed");
+                    if let rfd::MessageDialogResult::Yes = rfd::MessageDialog::new()
+                        .set_description("Delete this file?")
+                        .set_buttons(rfd::MessageButtons::YesNo)
+                        .show()
+                    {
+                        ad.delete_active()
+                    }
+                }
+
                 egui::SidePanel::new(Side::Left, "keyword").show(ctx, |ui| {
                     egui::ScrollArea::both().show(ui, |ui| {
                         ui.add_space(8.0);
