@@ -309,6 +309,7 @@ impl eframe::App for App {
         // menu is present for all app views
         egui::SidePanel::new(Side::Left, "menu")
             .exact_width(60.0)
+            .resizable(false)
             .show(ctx, |ui| {
                 ui.with_layout(
                     Layout::top_down(Align::Center).with_cross_align(Align::Center),
@@ -321,17 +322,49 @@ impl eframe::App for App {
                             family: FontFamily::Proportional,
                         });
 
-                        let open_img = ui.add(ImageButton::new(self.icons.folder.clone()));
+                        style.visuals.widgets.hovered.weak_bg_fill = Color32::GRAY;
+                        style.visuals.widgets.hovered.bg_stroke.width = 0.0;
+                        style.visuals.widgets.hovered.fg_stroke.width = 0.0;
+
+                        style.visuals.widgets.active.weak_bg_fill = Color32::GRAY;
+                        style.visuals.widgets.active.bg_stroke.width = 0.0;
+                        style.visuals.widgets.active.fg_stroke.width = 0.0;
+
+                        style.visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+                        style.visuals.selection.stroke.width = 0.0;
+
+                        let (open, mut tag, query) = (
+                            ImageButton::new(self.icons.folder.clone())
+                                .selected(false)
+                                .tint(Color32::DARK_GRAY)
+                                .rounding(5.0),
+                            ImageButton::new(self.icons.tag.clone())
+                                .selected(false)
+                                .tint(Color32::DARK_GRAY)
+                                .rounding(5.0),
+                            ImageButton::new(self.icons.query.clone())
+                                .selected(false)
+                                .tint(Color32::DARK_GRAY)
+                                .rounding(5.0),
+                        );
+                        match self.view {
+                            AppView::DirSelect => (),
+                            AppView::ApplyTags(_) => {
+                                tag = tag.selected(true).tint(Color32::BLUE);
+                            }
+                        }
+
+                        let open_img = ui.add(open);
                         let open_label = ui.add(Label::new("Open"));
 
                         ui.add_space(padding);
 
-                        let tag_img = ui.add(ImageButton::new(self.icons.tag.clone()));
+                        let tag_img = ui.add(tag);
                         let tag_label = ui.add(Label::new("Tag"));
 
                         ui.add_space(padding);
 
-                        let query_img = ui.add(ImageButton::new(self.icons.query.clone()));
+                        let query_img = ui.add(query);
                         let query_label = ui.add(Label::new("Query"));
 
                         if open_img.clicked() || open_label.clicked() {
