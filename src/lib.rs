@@ -6,8 +6,8 @@ pub mod fs_util;
 pub mod schema;
 pub mod util;
 
-use app::{App, AppView};
-use eframe::egui::{self, FontFamily};
+use app::{App, AppIcons, AppView};
+use eframe::egui::{self, include_image, FontFamily};
 use error::{Error, Result};
 use std::sync::Arc;
 use tracing::info;
@@ -27,6 +27,10 @@ pub fn run() -> Result<()> {
         // dummy ctx that gets immediately overwritten.
         ctx: Arc::new(egui::Context::default()),
         view: AppView::DirSelect,
+        icons: AppIcons {
+            tag: include_image!("../assets/icons/tag.png"),
+            folder: include_image!("../assets/icons/folder.png"),
+        },
     };
 
     info!("Building the UI");

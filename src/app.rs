@@ -8,7 +8,7 @@ use crate::{
 use eframe::egui::{
     self,
     panel::{Side, TopBottomSide},
-    Button, Color32, Key, Label,
+    Button, Color32, Image, ImageSource, Key, Label,
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -189,9 +189,16 @@ impl AppDir {
 }
 
 #[derive(Clone, Debug)]
+pub struct AppIcons {
+    pub tag: ImageSource<'static>,
+    pub folder: ImageSource<'static>,
+}
+
+#[derive(Clone, Debug)]
 pub struct App {
     pub ctx: Arc<egui::Context>,
     pub view: AppView,
+    pub icons: AppIcons,
 }
 
 impl App {
@@ -302,6 +309,13 @@ impl eframe::App for App {
         // TODO some parts should be common. Frame out the whole app, then fill content based on view.
         match &mut self.view {
             AppView::DirSelect => {
+                egui::SidePanel::new(Side::Left, "keyword").show(ctx, |ui| {
+                    ui.add(Image::new(self.icons.folder.clone()));
+                    ui.add(Label::new("Open"));
+                    ui.add(Image::new(self.icons.tag.clone()));
+                    ui.add(Label::new("Tag"));
+                });
+
                 egui::CentralPanel::default().show(ctx, |ui| {
                     let open_button = ui.button("Open");
                     if open_button.clicked() {
