@@ -28,8 +28,9 @@ pub fn run() -> Result<()> {
         ctx: Arc::new(egui::Context::default()),
         view: AppView::DirSelect,
         icons: AppIcons {
-            tag: include_image!("../assets/icons/tag.png"),
             folder: include_image!("../assets/icons/folder.png"),
+            tag: include_image!("../assets/icons/tag.png"),
+            query: include_image!("../assets/icons/search.png"),
         },
     };
 

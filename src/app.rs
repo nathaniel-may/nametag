@@ -8,7 +8,7 @@ use crate::{
 use eframe::egui::{
     self,
     panel::{Side, TopBottomSide},
-    Button, Color32, Image, ImageSource, Key, Label,
+    Align, Button, Color32, FontFamily, ImageButton, ImageSource, Key, Label, Layout,
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -190,8 +190,9 @@ impl AppDir {
 
 #[derive(Clone, Debug)]
 pub struct AppIcons {
-    pub tag: ImageSource<'static>,
     pub folder: ImageSource<'static>,
+    pub tag: ImageSource<'static>,
+    pub query: ImageSource<'static>,
 }
 
 #[derive(Clone, Debug)]
@@ -305,26 +306,63 @@ pub fn to_empty_state(schema: &Schema, rng: &mut ChaCha8Rng) -> Vec<UiBlock> {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // switch entire ui on view
-        // TODO some parts should be common. Frame out the whole app, then fill content based on view.
+        // menu is present for all app views
+        egui::SidePanel::new(Side::Left, "menu")
+            .exact_width(60.0)
+            .show(ctx, |ui| {
+                ui.with_layout(
+                    Layout::top_down(Align::Center).with_cross_align(Align::Center),
+                    |ui| {
+                        let padding = 20.0;
+
+                        let style = ui.style_mut();
+                        style.override_font_id = Some(egui::FontId {
+                            size: 13.0,
+                            family: FontFamily::Proportional,
+                        });
+
+                        let open_img = ui.add(ImageButton::new(self.icons.folder.clone()));
+                        let open_label = ui.add(Label::new("Open"));
+
+                        ui.add_space(padding);
+
+                        let tag_img = ui.add(ImageButton::new(self.icons.tag.clone()));
+                        let tag_label = ui.add(Label::new("Tag"));
+
+                        ui.add_space(padding);
+
+                        let query_img = ui.add(ImageButton::new(self.icons.query.clone()));
+                        let query_label = ui.add(Label::new("Query"));
+
+                        if open_img.clicked() || open_label.clicked() {
+                            // let the user pick a new folder
+                            if let Some(new_path) = rfd::FileDialog::new().pick_folder() {
+                                match &self.view {
+                                    // check to see if it's the current folder. Don't reload if it is.
+                                    AppView::ApplyTags(current) if current.path == new_path => (),
+                                    _ => {
+                                        // TODO handle these errors properly
+                                        self.load_dir(new_path).unwrap();
+                                    }
+                                }
+                            }
+                        }
+
+                        if tag_img.clicked() || tag_label.clicked() {
+                            // TODO switches back to tagging if they're searching.
+                        }
+
+                        if query_img.clicked() || query_label.clicked() {
+                            // TODO switches back to searching if they're tagging.
+                        }
+                    },
+                );
+            });
+
+        // match on app view to decide on other panes and actions
         match &mut self.view {
             AppView::DirSelect => {
-                egui::SidePanel::new(Side::Left, "keyword").show(ctx, |ui| {
-                    ui.add(Image::new(self.icons.folder.clone()));
-                    ui.add(Label::new("Open"));
-                    ui.add(Image::new(self.icons.tag.clone()));
-                    ui.add(Label::new("Tag"));
-                });
-
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    let open_button = ui.button("Open");
-                    if open_button.clicked() {
-                        if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                            // TODO handle these errors properly
-                            self.load_dir(path).unwrap();
-                        }
-                    }
-                });
+                egui::CentralPanel::default().show(ctx, |_| {});
             }
             AppView::ApplyTags(ad) => {
                 if ctx.input(|i| i.key_pressed(Key::ArrowLeft)) {
