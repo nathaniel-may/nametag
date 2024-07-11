@@ -3,6 +3,7 @@ pub mod config;
 pub mod error;
 pub mod filename;
 pub mod fs_util;
+pub mod parse_state_machine;
 pub mod schema;
 pub mod util;
 
