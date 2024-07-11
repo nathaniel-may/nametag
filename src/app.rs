@@ -10,7 +10,6 @@ use eframe::egui::{
     panel::{Side, TopBottomSide},
     Align, Button, Color32, FontFamily, ImageButton, ImageSource, Key, Label, Layout,
 };
-use egui_modal::Modal;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::{
