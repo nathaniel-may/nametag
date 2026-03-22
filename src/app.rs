@@ -383,8 +383,13 @@ impl eframe::App for App {
                                     // check to see if it's the current folder. Don't reload if it is.
                                     AppView::ApplyTags(current) if current.path == new_path => (),
                                     _ => {
-                                        // TODO handle these errors properly
-                                        self.load_dir(new_path).unwrap();
+                                        if let Err(e) = self.load_dir(new_path) {
+                                            rfd::MessageDialog::new()
+                                                .set_title("Failed to open directory")
+                                                .set_description(&e.to_string())
+                                                .set_buttons(rfd::MessageButtons::Ok)
+                                                .show();
+                                        }
                                     }
                                 }
                             }
